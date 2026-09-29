@@ -39,6 +39,7 @@ import com.example.ui.components.ReadingBottomBar
 import com.example.ui.components.ReadingSessionSheet
 import com.example.ui.components.ReadingTopBar
 import com.example.ui.components.SearchOverlay
+import com.example.ui.components.VoiceReadingBottomBar
 import com.example.ui.components.VoiceReadingPlayer
 import com.example.ui.viewmodel.PdfViewModel
 
@@ -80,6 +81,11 @@ fun ReaderScreen(
     val totalSentences by viewModel.voiceReadingTotalSentences.collectAsState()
     val currentSentenceText by viewModel.voiceReadingSentenceText.collectAsState()
     val voiceSpeed by viewModel.voiceReadingSpeed.collectAsState()
+    val voiceVolume by viewModel.voiceReadingVolume.collectAsState()
+
+    // Page flip animation state
+    val isPageFlipEnabled by viewModel.isPageFlipEnabled.collectAsState()
+    val lastPageTurnDelta by viewModel.lastPageTurnDelta.collectAsState()
 
     // Search state
     val isSearchOpen by viewModel.searchResults.collectAsState()
@@ -134,6 +140,8 @@ fun ReaderScreen(
                 isHighlightMode = isHighlightMode,
                 isReadingRulerEnabled = isReadingRulerEnabled,
                 readingRulerRatio = readingRulerRatio,
+                isPageFlipEnabled = isPageFlipEnabled,
+                pageTurnDelta = lastPageTurnDelta,
                 onTapLeft = { viewModel.prevPage() },
                 onTapRight = { viewModel.nextPage() },
                 onTapCenter = { viewModel.toggleControls() },
@@ -172,12 +180,14 @@ fun ReaderScreen(
                     isHighlightMode = isHighlightMode,
                     sessionDurationText = sessionDurationText,
                     isSessionTimerRunning = isSessionTimerRunning,
+                    isPageFlipEnabled = isPageFlipEnabled,
                     onBack = {
                         viewModel.closeDocument()
                         onBack()
                     },
                     onToggleBookmark = { viewModel.toggleBookmark() },
                     onToggleHighlightMode = { viewModel.toggleHighlightMode() },
+                    onTogglePageFlip = { viewModel.togglePageFlip() },
                     onOpenSearch = { isSearchActive = true },
                     onOpenNotesDrawer = { showNotesSheet = true },
                     onOpenChat = { showAiChatSheet = true },
@@ -250,7 +260,9 @@ fun ReaderScreen(
                     totalPages = totalPages,
                     isReadingRulerEnabled = isReadingRulerEnabled,
                     sessionDurationText = sessionDurationText,
+                    isPageFlipEnabled = isPageFlipEnabled,
                     onOpenSessionTimer = { viewModel.openReadingSessionSheet() },
+                    onTogglePageFlip = { viewModel.togglePageFlip() },
                     onPageChange = { page -> viewModel.goToPage(page) },
                     onPrevPage = { viewModel.prevPage() },
                     onNextPage = { viewModel.nextPage() },
@@ -265,16 +277,24 @@ fun ReaderScreen(
                 exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
                 modifier = Modifier.align(Alignment.BottomCenter)
             ) {
-                VoiceReadingPlayer(
+                VoiceReadingBottomBar(
                     isPlaying = isVoicePlaying,
                     currentSentenceIndex = currentSentenceIndex,
                     totalSentences = totalSentences,
                     currentSentenceText = currentSentenceText,
                     playbackSpeed = voiceSpeed,
+                    playbackVolume = voiceVolume,
+                    currentPage = currentPageIndex,
+                    totalPages = totalPages,
                     onTogglePlayPause = { viewModel.toggleVoiceReading() },
                     onSkipForward = { viewModel.skipVoiceReadingForward() },
                     onSkipBackward = { viewModel.skipVoiceReadingBackward() },
+                    onSeekTo = { sentenceIndex -> viewModel.seekVoiceReading(sentenceIndex) },
+                    onSelectSpeed = { speed -> viewModel.setVoiceReadingSpeed(speed) },
+                    onVolumeChange = { volume -> viewModel.setVoiceReadingVolume(volume) },
                     onCycleSpeed = { viewModel.cycleVoiceReadingSpeed() },
+                    onPrevPage = { viewModel.prevPage() },
+                    onNextPage = { viewModel.nextPage() },
                     onClose = { viewModel.closeVoiceReader() }
                 )
             }

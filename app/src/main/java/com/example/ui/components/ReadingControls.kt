@@ -25,6 +25,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.NavigateBefore
 import androidx.compose.material.icons.automirrored.filled.NavigateNext
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Brush
@@ -73,9 +74,11 @@ fun ReadingTopBar(
     isHighlightMode: Boolean,
     sessionDurationText: String = "",
     isSessionTimerRunning: Boolean = true,
+    isPageFlipEnabled: Boolean = true,
     onBack: () -> Unit,
     onToggleBookmark: () -> Unit,
     onToggleHighlightMode: () -> Unit,
+    onTogglePageFlip: () -> Unit = {},
     onOpenSearch: () -> Unit,
     onOpenNotesDrawer: () -> Unit,
     onOpenChat: () -> Unit,
@@ -241,6 +244,15 @@ fun ReadingTopBar(
                     }
                 }
 
+                // Page flip animation toggle button
+                IconButton(onClick = onTogglePageFlip, modifier = Modifier.testTag("reader_page_flip_toggle")) {
+                    Icon(
+                        imageVector = Icons.Default.AutoStories,
+                        contentDescription = if (isPageFlipEnabled) "Page Flip Animation: ON" else "Page Flip Animation: OFF",
+                        tint = if (isPageFlipEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
                 // All Notes & Bookmarks drawer
                 IconButton(onClick = onOpenNotesDrawer, modifier = Modifier.testTag("reader_notes_drawer_button")) {
                     Icon(imageVector = Icons.Default.EditNote, contentDescription = "View Notes & Bookmarks")
@@ -259,7 +271,9 @@ fun ReadingBottomBar(
     totalPages: Int,
     isReadingRulerEnabled: Boolean,
     sessionDurationText: String = "",
+    isPageFlipEnabled: Boolean = true,
     onOpenSessionTimer: () -> Unit = {},
+    onTogglePageFlip: () -> Unit = {},
     onPageChange: (Int) -> Unit,
     onPrevPage: () -> Unit,
     onNextPage: () -> Unit,
@@ -363,6 +377,21 @@ fun ReadingBottomBar(
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
+                        onClick = onTogglePageFlip,
+                        modifier = Modifier
+                            .size(36.dp)
+                            .testTag("toggle_page_flip_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AutoStories,
+                            contentDescription = if (isPageFlipEnabled) "Page Flip Animation: ON" else "Page Flip Animation: OFF",
+                            tint = if (isPageFlipEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(4.dp))
+
                     IconButton(
                         onClick = onToggleReadingRuler,
                         modifier = Modifier

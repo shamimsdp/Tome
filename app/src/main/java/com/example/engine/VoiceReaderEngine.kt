@@ -32,9 +32,23 @@ class VoiceReaderEngine(private val context: Context) : TextToSpeech.OnInitListe
     private val _playbackSpeed = MutableStateFlow(1.0f)
     val playbackSpeed: StateFlow<Float> = _playbackSpeed.asStateFlow()
 
+    private val _playbackVolume = MutableStateFlow(1.0f)
+    val playbackVolume: StateFlow<Float> = _playbackVolume.asStateFlow()
+
     private var sentences: List<String> = emptyList()
 
+    private val prefs = context.getSharedPreferences("tome_voice_reader_prefs", Context.MODE_PRIVATE)
+
+    companion object {
+        private const val PREF_TTS_SPEED = "tts_playback_speed"
+        private const val PREF_TTS_VOLUME = "tts_playback_volume"
+    }
+
     init {
+        val savedSpeed = prefs.getFloat(PREF_TTS_SPEED, 1.0f)
+        val savedVolume = prefs.getFloat(PREF_TTS_VOLUME, 1.0f)
+        _playbackSpeed.value = savedSpeed.coerceIn(0.5f, 3.0f)
+        _playbackVolume.value = savedVolume.coerceIn(0.0f, 1.0f)
         tts = TextToSpeech(context.applicationContext, this)
     }
 
@@ -134,6 +148,17 @@ class VoiceReaderEngine(private val context: Context) : TextToSpeech.OnInitListe
         }
     }
 
+    fun seekTo(index: Int) {
+        if (sentences.isEmpty()) return
+        val clamped = index.coerceIn(0, (sentences.size - 1).coerceAtLeast(0))
+        _currentSentenceIndex.value = clamped
+        if (_isPlaying.value) {
+            speakCurrentSentence()
+        } else {
+            _currentSentenceText.value = sentences.getOrNull(clamped) ?: ""
+        }
+    }
+
     fun skipForward() {
         if (sentences.isEmpty()) return
         val next = (_currentSentenceIndex.value + 1).coerceAtMost(sentences.size - 1)
@@ -169,8 +194,19 @@ class VoiceReaderEngine(private val context: Context) : TextToSpeech.OnInitListe
     }
 
     fun setPlaybackSpeed(speed: Float) {
-        _playbackSpeed.value = speed
-        tts?.setSpeechRate(speed)
+        val clamped = speed.coerceIn(0.5f, 3.0f)
+        _playbackSpeed.value = clamped
+        prefs.edit().putFloat(PREF_TTS_SPEED, clamped).apply()
+        tts?.setSpeechRate(clamped)
+        if (_isPlaying.value) {
+            speakCurrentSentence()
+        }
+    }
+
+    fun setPlaybackVolume(volume: Float) {
+        val clamped = volume.coerceIn(0.0f, 1.0f)
+        _playbackVolume.value = clamped
+        prefs.edit().putFloat(PREF_TTS_VOLUME, clamped).apply()
         if (_isPlaying.value) {
             speakCurrentSentence()
         }
@@ -183,6 +219,7 @@ class VoiceReaderEngine(private val context: Context) : TextToSpeech.OnInitListe
 
         val params = Bundle().apply {
             putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, "sentence_$index")
+            putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, _playbackVolume.value)
         }
         tts?.speak(textToSpeak, TextToSpeech.QUEUE_FLUSH, params, "sentence_$index")
     }

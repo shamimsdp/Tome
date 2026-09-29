@@ -103,6 +103,30 @@ class PdfEngine {
         }
     }
 
+    suspend fun renderThumbnail(pageIndex: Int, thumbWidth: Int = 180, thumbHeight: Int = 250): Bitmap? = withContext(Dispatchers.IO) {
+        val cacheKey = "${currentFile?.absolutePath}_thumb_$pageIndex"
+        bitmapCache.get(cacheKey)?.let { return@withContext it }
+
+        mutex.withLock {
+            val r = renderer ?: return@withContext null
+            if (pageIndex < 0 || pageIndex >= r.pageCount) return@withContext null
+
+            var page: PdfRenderer.Page? = null
+            try {
+                page = r.openPage(pageIndex)
+                val bitmap = Bitmap.createBitmap(thumbWidth, thumbHeight, Bitmap.Config.ARGB_8888)
+                bitmap.eraseColor(Color.WHITE)
+                page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                bitmapCache.put(cacheKey, bitmap)
+                return@withContext bitmap
+            } catch (e: Exception) {
+                return@withContext null
+            } finally {
+                page?.close()
+            }
+        }
+    }
+
     fun searchFullText(query: String): List<SearchMatch> {
         if (query.isBlank() || query.length < 2) return emptyList()
         val results = mutableListOf<SearchMatch>()

@@ -320,6 +320,9 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
     fun goToPage(page: Int) {
         val total = _totalPages.value
         val clamped = page.coerceIn(0, (total - 1).coerceAtLeast(0))
+        if (clamped != _currentPageIndex.value) {
+            _lastPageTurnDelta.value = if (clamped > _currentPageIndex.value) 1 else -1
+        }
         _currentPageIndex.value = clamped
 
         _sessionVisitedPages.add(clamped)
@@ -585,6 +588,31 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
     val voiceReadingSentenceText: StateFlow<String> = voiceReaderEngine.currentSentenceText
     val voiceReadingTotalSentences: StateFlow<Int> = voiceReaderEngine.totalSentences
     val voiceReadingSpeed: StateFlow<Float> = voiceReaderEngine.playbackSpeed
+    val voiceReadingVolume: StateFlow<Float> = voiceReaderEngine.playbackVolume
+
+    // Page flip animation preference & direction
+    private val readerPrefs = application.getSharedPreferences("tome_reader_prefs", android.content.Context.MODE_PRIVATE)
+    private val _isPageFlipEnabled = MutableStateFlow(readerPrefs.getBoolean("pref_page_flip_enabled", true))
+    val isPageFlipEnabled: StateFlow<Boolean> = _isPageFlipEnabled.asStateFlow()
+
+    private val _lastPageTurnDelta = MutableStateFlow(1) // +1 for next, -1 for prev
+    val lastPageTurnDelta: StateFlow<Int> = _lastPageTurnDelta.asStateFlow()
+
+    fun togglePageFlip() {
+        val newVal = !_isPageFlipEnabled.value
+        _isPageFlipEnabled.value = newVal
+        readerPrefs.edit().putBoolean("pref_page_flip_enabled", newVal).apply()
+        _statusMessage.value = if (newVal) "Page Flip Animation: ON" else "Page Flip Animation: OFF"
+    }
+
+    fun setPageFlipEnabled(enabled: Boolean) {
+        _isPageFlipEnabled.value = enabled
+        readerPrefs.edit().putBoolean("pref_page_flip_enabled", enabled).apply()
+    }
+
+    fun setVoiceReadingVolume(volume: Float) {
+        voiceReaderEngine.setPlaybackVolume(volume)
+    }
 
     init {
         voiceReaderEngine.onPageCompleted = {
@@ -623,6 +651,14 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
 
     fun skipVoiceReadingBackward() {
         voiceReaderEngine.skipBackward()
+    }
+
+    fun seekVoiceReading(sentenceIndex: Int) {
+        voiceReaderEngine.seekTo(sentenceIndex)
+    }
+
+    fun setVoiceReadingSpeed(speed: Float) {
+        voiceReaderEngine.setPlaybackSpeed(speed)
     }
 
     fun cycleVoiceReadingSpeed() {
