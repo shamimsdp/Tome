@@ -1,0 +1,13 @@
+<resources>
+    <string name="app_name">PageCraft</string>
+    <string name="tab_library">Library</string>
+    <string name="tab_cloud">Cloud Drive</string>
+    <string name="tab_notes">All Notes</string>
+    <string name="tab_settings">Sync &amp; Settings</string>
+    <string name="offline_mode_active">Offline Mode Active</string>
+    <string name="open_pdf">Open PDF</string>
+    <string name="search_hint">Search in book…</string>
+    <string name="bookmark_page">Bookmark</string>
+    <string name="add_note">Add Note</string>
+    <string name="page_counter_format">Page %1$d of %2$d</string>
+</resources>

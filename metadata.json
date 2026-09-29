@@ -1,0 +1,6 @@
+{
+  "name": "PageCraft PDF Reader",
+  "description": "Book-like PDF reader with page flips, text highlights, custom notes, bookmarks, full-text search, offline caching, and cross-device sync.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
