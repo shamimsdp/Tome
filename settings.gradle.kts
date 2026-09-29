@@ -22,6 +22,6 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "PageCraft"
+rootProject.name = "Tome"
 
 include(":app")

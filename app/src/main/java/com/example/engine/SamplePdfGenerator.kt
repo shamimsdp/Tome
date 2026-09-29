@@ -278,7 +278,7 @@ object SamplePdfGenerator {
             val footerY = pageHeight - 45f
             canvas.drawLine(50f, footerY - 15f, (pageWidth - 50).toFloat(), footerY - 15f, rulePaint)
             canvas.drawText("Page ${pageIndex + 1} of ${book.pagesText.size}", 50f, footerY, pageNumberPaint)
-            canvas.drawText("PageCraft Book Reader", (pageWidth - 160).toFloat(), footerY, pageNumberPaint)
+            canvas.drawText("Tome Book Reader", (pageWidth - 160).toFloat(), footerY, pageNumberPaint)
 
             document.finishPage(page)
         }

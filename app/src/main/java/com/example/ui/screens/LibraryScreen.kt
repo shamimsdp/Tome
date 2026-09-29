@@ -119,7 +119,7 @@ fun LibraryScreen(
                         Spacer(modifier = Modifier.width(12.dp))
                         Column {
                             Text(
-                                text = "PageCraft",
+                                text = "Tome",
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.ExtraBold
                             )

@@ -35,7 +35,7 @@ import com.example.ui.screens.CloudScreen
 import com.example.ui.screens.LibraryScreen
 import com.example.ui.screens.ReaderScreen
 import com.example.ui.screens.SyncSettingsScreen
-import com.example.ui.theme.PageCraftTheme
+import com.example.ui.theme.TomeTheme
 import com.example.ui.viewmodel.PdfViewModel
 
 class MainActivity : ComponentActivity() {
@@ -49,7 +49,7 @@ class MainActivity : ComponentActivity() {
             val currentReadingTheme by viewModel.readingTheme.collectAsState()
             val isDarkTheme = currentReadingTheme == ReadingTheme.CHARCOAL || currentReadingTheme == ReadingTheme.OLED_NIGHT
 
-            PageCraftTheme(darkTheme = isDarkTheme) {
+            TomeTheme(darkTheme = isDarkTheme) {
                 MainAppContent(viewModel = viewModel)
             }
         }

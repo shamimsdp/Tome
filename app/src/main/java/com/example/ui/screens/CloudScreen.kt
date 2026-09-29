@@ -211,7 +211,7 @@ fun CloudScreen(
                         }
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "• Google Drive (shamim.bjit@gmail.com)\n• PageCraft Cloud Notes Sync",
+                            text = "• Google Drive (shamim.bjit@gmail.com)\n• Tome Cloud Notes Sync",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             lineHeight = 18.sp

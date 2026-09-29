@@ -41,7 +41,7 @@ private val LightColorScheme = lightColorScheme(
 )
 
 @Composable
-fun PageCraftTheme(
+fun TomeTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     dynamicColor: Boolean = false,
     content: @Composable () -> Unit
@@ -61,3 +61,10 @@ fun PageCraftTheme(
         content = content
     )
 }
+
+@Composable
+fun PageCraftTheme(
+    darkTheme: Boolean = isSystemInDarkTheme(),
+    dynamicColor: Boolean = false,
+    content: @Composable () -> Unit
+) = TomeTheme(darkTheme, dynamicColor, content)
