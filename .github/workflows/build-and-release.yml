@@ -46,9 +46,17 @@ jobs:
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.3.1'
 
-      - name: Make Gradle wrapper executable
-        run: chmod +x gradlew || true
+      - name: Ensure Gradle Wrapper & Permissions
+        run: |
+          chmod +x gradlew || true
+          if [ ! -f gradle/wrapper/gradle-wrapper.jar ]; then
+            echo "Generating Gradle wrapper..."
+            gradle wrapper --gradle-version 9.3.1 || true
+            chmod +x gradlew || true
+          fi
 
       - name: Prepare Secrets Configuration
         run: |
@@ -58,15 +66,30 @@ jobs:
           fi
 
       - name: Run Unit Tests
-        run: ./gradlew testDebugUnitTest --no-daemon
+        run: |
+          if [ -x "./gradlew" ]; then
+            ./gradlew testDebugUnitTest --no-daemon
+          else
+            gradle testDebugUnitTest --no-daemon
+          fi
 
       - name: Build Debug APK
         if: ${{ github.event.inputs.build_type == 'debug' }}
-        run: ./gradlew assembleDebug --no-daemon
+        run: |
+          if [ -x "./gradlew" ]; then
+            ./gradlew assembleDebug --no-daemon
+          else
+            gradle assembleDebug --no-daemon
+          fi
 
       - name: Build Release APK
         if: ${{ github.event.inputs.build_type != 'debug' }}
-        run: ./gradlew assembleRelease --no-daemon || ./gradlew assembleDebug --no-daemon
+        run: |
+          if [ -x "./gradlew" ]; then
+            ./gradlew assembleRelease --no-daemon || ./gradlew assembleDebug --no-daemon
+          else
+            gradle assembleRelease --no-daemon || gradle assembleDebug --no-daemon
+          fi
         env:
           KEYSTORE_PATH: ${{ secrets.KEYSTORE_PATH }}
           STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
@@ -77,6 +100,10 @@ jobs:
         id: find_apk
         run: |
           APK_PATH=$(find app/build/outputs/apk -name "*.apk" | head -n 1)
+          if [ -z "$APK_PATH" ]; then
+            echo "Error: No APK file found in app/build/outputs/apk" >&2
+            exit 1
+          fi
           echo "Found APK at: $APK_PATH"
           echo "apk_path=$APK_PATH" >> $GITHUB_OUTPUT
           APK_NAME=$(basename "$APK_PATH")

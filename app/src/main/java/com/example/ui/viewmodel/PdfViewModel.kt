@@ -423,6 +423,110 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
         _statusMessage.value = null
     }
 
+    // Gemini Chatbot State
+    val geminiChatService = com.example.engine.GeminiChatService()
+
+    private val _chatMessages = MutableStateFlow<List<com.example.data.model.ChatMessage>>(
+        listOf(
+            com.example.data.model.ChatMessage(
+                sender = com.example.data.model.MessageSender.AI,
+                text = "Greetings! I am Tome AI, your literary companion and reading scholar. You can ask me to analyze chapters, explain difficult passages, summarize ideas, or use Google Search Grounding to verify historical facts and author background. What would you like to explore today?",
+                modelUsed = "Gemini 3.5 Flash"
+            )
+        )
+    )
+    val chatMessages: StateFlow<List<com.example.data.model.ChatMessage>> = _chatMessages.asStateFlow()
+
+    private val _selectedChatModel = MutableStateFlow(com.example.data.model.GeminiModelOption.GENERAL)
+    val selectedChatModel: StateFlow<com.example.data.model.GeminiModelOption> = _selectedChatModel.asStateFlow()
+
+    private val _selectedChatRole = MutableStateFlow(com.example.data.model.ChatbotRole.LITERARY_SCHOLAR)
+    val selectedChatRole: StateFlow<com.example.data.model.ChatbotRole> = _selectedChatRole.asStateFlow()
+
+    private val _isSearchGroundingEnabled = MutableStateFlow(true)
+    val isSearchGroundingEnabled: StateFlow<Boolean> = _isSearchGroundingEnabled.asStateFlow()
+
+    private val _isGeneratingChatResponse = MutableStateFlow(false)
+    val isGeneratingChatResponse: StateFlow<Boolean> = _isGeneratingChatResponse.asStateFlow()
+
+    fun setSelectedChatModel(model: com.example.data.model.GeminiModelOption) {
+        _selectedChatModel.value = model
+    }
+
+    fun setSelectedChatRole(role: com.example.data.model.ChatbotRole) {
+        _selectedChatRole.value = role
+    }
+
+    fun toggleSearchGrounding() {
+        _isSearchGroundingEnabled.value = !_isSearchGroundingEnabled.value
+    }
+
+    fun clearChatHistory() {
+        _chatMessages.value = listOf(
+            com.example.data.model.ChatMessage(
+                sender = com.example.data.model.MessageSender.AI,
+                text = "Chat history cleared. How may I assist you with your reading?",
+                modelUsed = _selectedChatModel.value.displayName
+            )
+        )
+    }
+
+    fun sendChatMessage(userText: String, includeBookContext: Boolean = true) {
+        if (userText.isBlank() || _isGeneratingChatResponse.value) return
+
+        val userMessage = com.example.data.model.ChatMessage(
+            sender = com.example.data.model.MessageSender.USER,
+            text = userText
+        )
+        val placeholderLoading = com.example.data.model.ChatMessage(
+            sender = com.example.data.model.MessageSender.AI,
+            text = "Thinking...",
+            isLoading = true
+        )
+
+        _chatMessages.value = _chatMessages.value + userMessage + placeholderLoading
+        _isGeneratingChatResponse.value = true
+
+        val bookContext = if (includeBookContext && _activeDocument.value != null) {
+            val doc = _activeDocument.value!!
+            val pageText = pdfEngine.getPageText(_currentPageIndex.value)
+            "Book: '${doc.title}' by ${doc.author}. Currently on page ${_currentPageIndex.value + 1} of ${doc.totalPages}.\nPage text excerpt:\n$pageText"
+        } else null
+
+        viewModelScope.launch {
+            val result = geminiChatService.sendMessage(
+                history = _chatMessages.value.dropLast(1), // exclude loading placeholder
+                newPrompt = userText,
+                modelOption = _selectedChatModel.value,
+                role = _selectedChatRole.value,
+                enableSearchGrounding = _isSearchGroundingEnabled.value,
+                bookContext = bookContext
+            )
+
+            result.onSuccess { chatResult ->
+                val aiMessage = com.example.data.model.ChatMessage(
+                    sender = com.example.data.model.MessageSender.AI,
+                    text = chatResult.responseText,
+                    modelUsed = chatResult.modelUsed,
+                    searchQueries = chatResult.searchQueries,
+                    sources = chatResult.sources
+                )
+                // Replace loading placeholder with actual response
+                _chatMessages.value = _chatMessages.value.filter { !it.isLoading } + aiMessage
+                _isGeneratingChatResponse.value = false
+            }.onFailure { error ->
+                val errorMessage = com.example.data.model.ChatMessage(
+                    sender = com.example.data.model.MessageSender.AI,
+                    text = "I encountered an issue: ${error.message}",
+                    isError = true,
+                    modelUsed = _selectedChatModel.value.displayName
+                )
+                _chatMessages.value = _chatMessages.value.filter { !it.isLoading } + errorMessage
+                _isGeneratingChatResponse.value = false
+            }
+        }
+    }
+
     fun getExportMarkdownForCurrentDoc(): String {
         val doc = _activeDocument.value ?: return ""
         return repository.exportNotesAsMarkdown(doc.title, _currentAnnotations.value)

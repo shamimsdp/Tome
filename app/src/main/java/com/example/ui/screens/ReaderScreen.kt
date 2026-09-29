@@ -8,10 +8,13 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -36,6 +39,7 @@ import com.example.ui.components.ReadingTopBar
 import com.example.ui.components.SearchOverlay
 import com.example.ui.viewmodel.PdfViewModel
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ReaderScreen(
     document: DocumentEntity,
@@ -73,6 +77,7 @@ fun ReaderScreen(
     val editingAnnotation by viewModel.editingAnnotation.collectAsState()
 
     var showNotesSheet by remember { mutableStateOf(false) }
+    var showAiChatSheet by remember { mutableStateOf(false) }
     var isSearchActive by remember { mutableStateOf(false) }
 
     val snackbarHostState = remember { SnackbarHostState() }
@@ -153,6 +158,7 @@ fun ReaderScreen(
                     onToggleHighlightMode = { viewModel.toggleHighlightMode() },
                     onOpenSearch = { isSearchActive = true },
                     onOpenNotesDrawer = { showNotesSheet = true },
+                    onOpenChat = { showAiChatSheet = true },
                     onSelectTheme = { theme -> viewModel.setReadingTheme(theme) }
                 )
             }
@@ -247,5 +253,21 @@ fun ReaderScreen(
             },
             onDismiss = { showNotesSheet = false }
         )
+    }
+
+    // AI Literary Companion Sheet
+    if (showAiChatSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showAiChatSheet = false },
+            containerColor = MaterialTheme.colorScheme.surface
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.9f)
+            ) {
+                ChatScreen(viewModel = viewModel)
+            }
+        }
     }
 }

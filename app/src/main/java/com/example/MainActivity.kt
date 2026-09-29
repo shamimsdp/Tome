@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.Settings
@@ -106,6 +107,13 @@ fun MainAppContent(viewModel: PdfViewModel) {
                     NavigationBarItem(
                         selected = selectedTab == 3,
                         onClick = { selectedTab = 3 },
+                        icon = { Icon(imageVector = Icons.Default.AutoAwesome, contentDescription = null) },
+                        label = { Text("AI Chat") },
+                        modifier = Modifier.testTag("nav_ai_chat")
+                    )
+                    NavigationBarItem(
+                        selected = selectedTab == 4,
+                        onClick = { selectedTab = 4 },
                         icon = { Icon(imageVector = Icons.Default.Settings, contentDescription = null) },
                         label = { Text("Sync") },
                         modifier = Modifier.testTag("nav_sync")
@@ -128,7 +136,8 @@ fun MainAppContent(viewModel: PdfViewModel) {
                     )
                     1 -> CloudScreen(viewModel = viewModel)
                     2 -> AllNotesScreen(viewModel = viewModel)
-                    3 -> SyncSettingsScreen(viewModel = viewModel)
+                    3 -> com.example.ui.screens.ChatScreen(viewModel = viewModel)
+                    4 -> SyncSettingsScreen(viewModel = viewModel)
                 }
             }
         }

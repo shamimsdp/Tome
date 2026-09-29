@@ -56,6 +56,20 @@
 * **Single Source of Truth**: All documents, bookmarks, highlights, and notes are persisted locally using **Room (SQLite)** with KSP.
 * **Sync Dashboard**: Status badge (`Synced just now`), unsynced item counters, manual `Sync Now` button, and activity audit logs.
 
+### 🤖 7. Gemini AI Literary Companion & Google Search Grounding
+* **Multi-Turn Scrollable Chat**: Maintain a rich conversational dialogue about any book, chapter, or philosophical idea.
+* **Google Search Grounding**: Integrates live Google Search data via the `googleSearch` tool on `gemini-3.5-flash` to verify real-time historical facts, contemporary literary critiques, and author biographies with clickable citation sources.
+* **Specialized System Roles**:
+  * **Literary Scholar & Critic**: Deep, eloquent analysis of symbolism, prose style, and philosophical themes.
+  * **Thoughtful Reading Companion**: Friendly assistance explaining difficult vocabulary and plot nuances.
+  * **Grounded Research Assistant**: Facts, historical timelines, and real-world cross-references.
+  * **Socratic Discussion Mentor**: Probing questions that encourage critical and active contemplation.
+* **Smart Model Selection**:
+  * `gemini-3.5-flash`: General, balanced literary exploration with Google Search Grounding.
+  * `gemini-3.1-pro-preview`: Advanced reasoning, complex critique, and deep philosophical queries.
+  * `gemini-3.1-flash-lite-preview`: Rapid definitions, quick summaries, and fast answers.
+* **Context-Aware Book Discussions**: Ask questions with the currently open book and page text attached with a single tap.
+
 ---
 
 ## 🏗️ Architecture & Technology Stack

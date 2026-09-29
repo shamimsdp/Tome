@@ -24,6 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.NavigateBefore
 import androidx.compose.material.icons.automirrored.filled.NavigateNext
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Brush
@@ -72,6 +73,7 @@ fun ReadingTopBar(
     onToggleHighlightMode: () -> Unit,
     onOpenSearch: () -> Unit,
     onOpenNotesDrawer: () -> Unit,
+    onOpenChat: () -> Unit,
     onSelectTheme: (ReadingTheme) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -107,6 +109,15 @@ fun ReadingTopBar(
                 }
             },
             actions = {
+                // Ask AI Companion button
+                IconButton(onClick = onOpenChat, modifier = Modifier.testTag("reader_ai_chat_button")) {
+                    Icon(
+                        imageVector = Icons.Default.AutoAwesome,
+                        contentDescription = "Ask Tome AI",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+
                 // Search in PDF
                 IconButton(onClick = onOpenSearch, modifier = Modifier.testTag("reader_search_button")) {
                     Icon(imageVector = Icons.Default.Search, contentDescription = "Search text")
