@@ -1,4 +1,5 @@
 import com.google.gms.googleservices.GoogleServicesPlugin.MissingGoogleServicesStrategy
+import java.util.Base64
 
 plugins {
   alias(libs.plugins.android.application)
@@ -22,23 +23,42 @@ android {
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
 
+  // Automatically restore debug.keystore from debug.keystore.base64 if missing in CI environments
+  val debugKeystoreFile = file("${rootDir}/debug.keystore")
+  val base64KeystoreFile = file("${rootDir}/debug.keystore.base64")
+  if (!debugKeystoreFile.exists() && base64KeystoreFile.exists()) {
+    try {
+      val decoded = Base64.getDecoder().decode(base64KeystoreFile.readText().trim())
+      debugKeystoreFile.writeBytes(decoded)
+    } catch (e: Exception) {
+      logger.warn("Could not restore debug.keystore from base64: ${e.message}")
+    }
+  }
+
   signingConfigs {
     create("release") {
-      val envKeystore = System.getenv("KEYSTORE_PATH")?.trim()
-      val keystorePath = if (!envKeystore.isNullOrEmpty()) envKeystore else "${rootDir}/my-upload-key.jks"
-      val resolvedFile = file(keystorePath)
-      if (resolvedFile.exists()) {
-        storeFile = resolvedFile
+      val envKeystorePath = System.getenv("KEYSTORE_PATH")?.trim()
+      // Safe null/empty check prevents 'Cannot convert '' to File' error when CI secrets are unset
+      val keystoreFile = when {
+        !envKeystorePath.isNullOrEmpty() -> file(envKeystorePath)
+        file("${rootDir}/my-upload-key.jks").exists() -> file("${rootDir}/my-upload-key.jks")
+        else -> null
+      }
+
+      if (keystoreFile != null && keystoreFile.exists()) {
+        storeFile = keystoreFile
         storePassword = System.getenv("STORE_PASSWORD")
         keyAlias = System.getenv("KEY_ALIAS")?.takeIf { it.isNotBlank() } ?: "upload"
         keyPassword = System.getenv("KEY_PASSWORD")
       }
     }
     create("debugConfig") {
-      storeFile = file("${rootDir}/debug.keystore")
-      storePassword = "android"
-      keyAlias = "androiddebugkey"
-      keyPassword = "android"
+      if (debugKeystoreFile.exists()) {
+        storeFile = debugKeystoreFile
+        storePassword = "android"
+        keyAlias = "androiddebugkey"
+        keyPassword = "android"
+      }
     }
   }
 
@@ -48,13 +68,23 @@ android {
       isMinifyEnabled = false
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
       val releaseConfig = signingConfigs.getByName("release")
+      val debugConfig = signingConfigs.getByName("debugConfig")
       if (releaseConfig.storeFile != null && releaseConfig.storeFile?.exists() == true) {
         signingConfig = releaseConfig
+      } else if (debugConfig.storeFile != null && debugConfig.storeFile?.exists() == true) {
+        signingConfig = debugConfig
       } else {
-        signingConfig = signingConfigs.getByName("debugConfig")
+        signingConfig = signingConfigs.getByName("debug")
       }
     }
-    debug { signingConfig = signingConfigs.getByName("debugConfig") }
+    debug {
+      val debugConfig = signingConfigs.getByName("debugConfig")
+      if (debugConfig.storeFile != null && debugConfig.storeFile?.exists() == true) {
+        signingConfig = debugConfig
+      } else {
+        signingConfig = signingConfigs.getByName("debug")
+      }
+    }
   }
   compileOptions {
     sourceCompatibility = JavaVersion.VERSION_11

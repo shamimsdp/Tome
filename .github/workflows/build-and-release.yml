@@ -81,6 +81,10 @@ jobs:
           if [ -f .env.example ]; then
             cp .env.example .env
           fi
+          if [ -f debug.keystore.base64 ] && [ ! -f debug.keystore ]; then
+            echo "Restoring debug.keystore from debug.keystore.base64..."
+            base64 -d debug.keystore.base64 > debug.keystore || true
+          fi
 
       - name: Run Unit Tests
         run: |
