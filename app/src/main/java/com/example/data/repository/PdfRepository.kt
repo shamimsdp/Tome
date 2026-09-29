@@ -193,6 +193,12 @@ class PdfRepository(
         documentDao.updateProgress(docId, page, percent, System.currentTimeMillis())
     }
 
+    suspend fun incrementReadingTime(docId: String, additionalSeconds: Long) {
+        if (additionalSeconds > 0) {
+            documentDao.incrementReadingTime(docId, additionalSeconds, System.currentTimeMillis())
+        }
+    }
+
     suspend fun toggleFavorite(docId: String, currentFavorite: Boolean) {
         documentDao.updateFavorite(docId, !currentFavorite)
     }

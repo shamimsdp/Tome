@@ -20,7 +20,8 @@ data class DocumentEntity(
     val isCloudSynced: Boolean = true,
     val lastReadTimestamp: Long = System.currentTimeMillis(),
     val isFavorite: Boolean = false,
-    val description: String = ""
+    val description: String = "",
+    val totalReadingTimeSeconds: Long = 0L
 ) {
     companion object {
         const val SOURCE_BUILT_IN = "BUILT_IN"

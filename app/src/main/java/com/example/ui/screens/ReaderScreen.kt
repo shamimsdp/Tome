@@ -36,6 +36,7 @@ import com.example.ui.components.ContextualSelectionToolbar
 import com.example.ui.components.EditAnnotationDialog
 import com.example.ui.components.NotesAndBookmarksSheet
 import com.example.ui.components.ReadingBottomBar
+import com.example.ui.components.ReadingSessionSheet
 import com.example.ui.components.ReadingTopBar
 import com.example.ui.components.SearchOverlay
 import com.example.ui.components.VoiceReadingPlayer
@@ -63,6 +64,14 @@ fun ReaderScreen(
     val selectedHighlightColor by viewModel.selectedHighlightColor.collectAsState()
     val annotations by viewModel.currentAnnotations.collectAsState()
     val bookmarks by viewModel.currentBookmarks.collectAsState()
+
+    // Reading Session Timer state
+    val sessionDurationSeconds by viewModel.sessionDurationSeconds.collectAsState()
+    val isSessionTimerRunning by viewModel.isSessionTimerRunning.collectAsState()
+    val pagesReadThisSession by viewModel.pagesReadThisSession.collectAsState()
+    val readingGoalMinutes by viewModel.readingGoalMinutes.collectAsState()
+    val isReadingSessionSheetOpen by viewModel.isReadingSessionSheetOpen.collectAsState()
+    val sessionDurationText = viewModel.formatTimerDisplay(sessionDurationSeconds)
 
     // Voice Reading state
     val isVoicePlayerVisible by viewModel.isVoicePlayerVisible.collectAsState()
@@ -161,6 +170,8 @@ fun ReaderScreen(
                     currentTheme = readingTheme,
                     isBookmarked = isBookmarked,
                     isHighlightMode = isHighlightMode,
+                    sessionDurationText = sessionDurationText,
+                    isSessionTimerRunning = isSessionTimerRunning,
                     onBack = {
                         viewModel.closeDocument()
                         onBack()
@@ -171,6 +182,7 @@ fun ReaderScreen(
                     onOpenNotesDrawer = { showNotesSheet = true },
                     onOpenChat = { showAiChatSheet = true },
                     onStartVoiceReading = { viewModel.toggleVoiceReading() },
+                    onOpenSessionTimer = { viewModel.openReadingSessionSheet() },
                     onSelectTheme = { theme -> viewModel.setReadingTheme(theme) }
                 )
             }
@@ -237,6 +249,8 @@ fun ReaderScreen(
                     currentPage = currentPageIndex,
                     totalPages = totalPages,
                     isReadingRulerEnabled = isReadingRulerEnabled,
+                    sessionDurationText = sessionDurationText,
+                    onOpenSessionTimer = { viewModel.openReadingSessionSheet() },
                     onPageChange = { page -> viewModel.goToPage(page) },
                     onPrevPage = { viewModel.prevPage() },
                     onNextPage = { viewModel.nextPage() },
@@ -331,5 +345,18 @@ fun ReaderScreen(
                 ChatScreen(viewModel = viewModel)
             }
         }
+    }
+
+    // Reading Session Timer & Progress Sheet
+    if (isReadingSessionSheetOpen) {
+        ReadingSessionSheet(
+            viewModel = viewModel,
+            document = document,
+            sessionDurationSeconds = sessionDurationSeconds,
+            isRunning = isSessionTimerRunning,
+            pagesReadThisSession = pagesReadThisSession,
+            readingGoalMinutes = readingGoalMinutes,
+            onDismiss = { viewModel.closeReadingSessionSheet() }
+        )
     }
 }

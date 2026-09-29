@@ -16,7 +16,7 @@ import com.example.data.model.SyncLogEntity
         AnnotationEntity::class,
         SyncLogEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

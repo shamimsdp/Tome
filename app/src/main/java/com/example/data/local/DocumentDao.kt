@@ -34,6 +34,9 @@ interface DocumentDao {
     @Query("UPDATE documents SET currentPage = :page, progressPercent = :percent, lastReadTimestamp = :timestamp WHERE id = :id")
     suspend fun updateProgress(id: String, page: Int, percent: Float, timestamp: Long)
 
+    @Query("UPDATE documents SET totalReadingTimeSeconds = totalReadingTimeSeconds + :additionalSeconds, lastReadTimestamp = :timestamp WHERE id = :id")
+    suspend fun incrementReadingTime(id: String, additionalSeconds: Long, timestamp: Long)
+
     @Query("UPDATE documents SET isOfflineAvailable = :isOffline WHERE id = :id")
     suspend fun updateOfflineStatus(id: String, isOffline: Boolean)
 

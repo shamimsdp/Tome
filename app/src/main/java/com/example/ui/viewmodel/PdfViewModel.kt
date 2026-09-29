@@ -16,6 +16,8 @@ import com.example.data.repository.CloudSyncRepository
 import com.example.data.repository.PdfRepository
 import com.example.engine.PdfEngine
 import com.example.engine.SearchMatch
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -135,6 +137,26 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
     private val _statusMessage = MutableStateFlow<String?>(null)
     val statusMessage: StateFlow<String?> = _statusMessage.asStateFlow()
 
+    // Reading Session Timer & Progress State
+    private var sessionTimerJob: Job? = null
+    private var unpersistedSessionSeconds: Long = 0L
+    private val _sessionVisitedPages = mutableSetOf<Int>()
+
+    private val _sessionDurationSeconds = MutableStateFlow(0L)
+    val sessionDurationSeconds: StateFlow<Long> = _sessionDurationSeconds.asStateFlow()
+
+    private val _isSessionTimerRunning = MutableStateFlow(true)
+    val isSessionTimerRunning: StateFlow<Boolean> = _isSessionTimerRunning.asStateFlow()
+
+    private val _pagesReadThisSession = MutableStateFlow(1)
+    val pagesReadThisSession: StateFlow<Int> = _pagesReadThisSession.asStateFlow()
+
+    private val _readingGoalMinutes = MutableStateFlow(20)
+    val readingGoalMinutes: StateFlow<Int> = _readingGoalMinutes.asStateFlow()
+
+    private val _isReadingSessionSheetOpen = MutableStateFlow(false)
+    val isReadingSessionSheetOpen: StateFlow<Boolean> = _isReadingSessionSheetOpen.asStateFlow()
+
     init {
         viewModelScope.launch {
             repository.initializeSamplesIfNeeded(pdfEngine)
@@ -154,7 +176,36 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
             _activeDocument.value = doc
 
             val targetPage = if (startPage >= 0) startPage else doc.currentPage
+            _sessionVisitedPages.clear()
+            _sessionVisitedPages.add(targetPage)
+            _pagesReadThisSession.value = 1
+            _sessionDurationSeconds.value = 0L
+            _isSessionTimerRunning.value = true
+            unpersistedSessionSeconds = 0L
+
             goToPage(targetPage.coerceIn(0, (_totalPages.value - 1).coerceAtLeast(0)))
+
+            // Start Reading Session Timer loop
+            sessionTimerJob?.cancel()
+            sessionTimerJob = launch {
+                while (true) {
+                    delay(1000)
+                    if (_isSessionTimerRunning.value && _activeDocument.value != null) {
+                        _sessionDurationSeconds.value += 1
+                        unpersistedSessionSeconds += 1
+
+                        // Periodically sync reading duration to database every 30 seconds
+                        if (unpersistedSessionSeconds >= 30) {
+                            val activeId = _activeDocument.value?.id
+                            val toFlush = unpersistedSessionSeconds
+                            unpersistedSessionSeconds = 0L
+                            if (activeId != null) {
+                                repository.incrementReadingTime(activeId, toFlush)
+                            }
+                        }
+                    }
+                }
+            }
 
             // Observe bookmarks and annotations for this document
             launch {
@@ -173,15 +224,106 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
 
     fun closeDocument() {
         closeVoiceReader()
+        sessionTimerJob?.cancel()
+        sessionTimerJob = null
+        _isSessionTimerRunning.value = false
+
+        // Flush any remaining session reading time
+        val activeDocId = _activeDocument.value?.id
+        val remainingToFlush = unpersistedSessionSeconds
+        unpersistedSessionSeconds = 0L
+        if (activeDocId != null && remainingToFlush > 0) {
+            viewModelScope.launch {
+                repository.incrementReadingTime(activeDocId, remainingToFlush)
+            }
+        }
+
         _activeDocument.value = null
         _currentPageBitmap.value = null
+        _isReadingSessionSheetOpen.value = false
         pdfEngine.close()
+    }
+
+    // Reading Session Timer Controls
+    fun toggleSessionTimer() {
+        _isSessionTimerRunning.value = !_isSessionTimerRunning.value
+    }
+
+    fun pauseSessionTimer() {
+        _isSessionTimerRunning.value = false
+    }
+
+    fun resumeSessionTimer() {
+        _isSessionTimerRunning.value = true
+    }
+
+    fun resetSessionTimer() {
+        // Flush current elapsed time first
+        val activeDocId = _activeDocument.value?.id
+        val toFlush = unpersistedSessionSeconds
+        unpersistedSessionSeconds = 0L
+        if (activeDocId != null && toFlush > 0) {
+            viewModelScope.launch {
+                repository.incrementReadingTime(activeDocId, toFlush)
+            }
+        }
+        _sessionDurationSeconds.value = 0L
+        _isSessionTimerRunning.value = true
+    }
+
+    fun openReadingSessionSheet() {
+        _isReadingSessionSheetOpen.value = true
+    }
+
+    fun closeReadingSessionSheet() {
+        _isReadingSessionSheetOpen.value = false
+    }
+
+    fun setReadingGoalMinutes(minutes: Int) {
+        _readingGoalMinutes.value = minutes.coerceIn(5, 180)
+    }
+
+    fun formatTimerDisplay(seconds: Long): String {
+        val hrs = seconds / 3600
+        val mins = (seconds % 3600) / 60
+        val secs = seconds % 60
+        return if (hrs > 0) {
+            String.format(java.util.Locale.US, "%02d:%02d:%02d", hrs, mins, secs)
+        } else {
+            String.format(java.util.Locale.US, "%02d:%02d", mins, secs)
+        }
+    }
+
+    fun formatHumanDuration(seconds: Long): String {
+        val hrs = seconds / 3600
+        val mins = (seconds % 3600) / 60
+        val secs = seconds % 60
+        return when {
+            hrs > 0 -> "${hrs}h ${mins}m"
+            mins > 0 -> "${mins}m ${secs}s"
+            else -> "${secs}s"
+        }
+    }
+
+    fun getEstimatedRemainingMinutes(): Int {
+        val total = _totalPages.value
+        val current = _currentPageIndex.value
+        val remainingPages = (total - current - 1).coerceAtLeast(0)
+        if (remainingPages == 0) return 0
+
+        val pagesRead = _pagesReadThisSession.value.coerceAtLeast(1)
+        val elapsedMinutes = (_sessionDurationSeconds.value / 60f).coerceAtLeast(0.5f)
+        val minutesPerPage = (elapsedMinutes / pagesRead).coerceIn(0.5f, 5.0f)
+        return (remainingPages * minutesPerPage).toInt().coerceAtLeast(1)
     }
 
     fun goToPage(page: Int) {
         val total = _totalPages.value
         val clamped = page.coerceIn(0, (total - 1).coerceAtLeast(0))
         _currentPageIndex.value = clamped
+
+        _sessionVisitedPages.add(clamped)
+        _pagesReadThisSession.value = _sessionVisitedPages.size
 
         if (_isVoicePlayerVisible.value) {
             val pageText = pdfEngine.getPageText(clamped, _activeDocument.value?.title ?: "", total)

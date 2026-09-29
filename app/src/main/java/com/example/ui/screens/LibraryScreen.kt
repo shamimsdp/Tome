@@ -548,6 +548,17 @@ fun DocumentListItem(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    if (document.totalReadingTimeSeconds > 0) {
+                        val mins = (document.totalReadingTimeSeconds / 60).coerceAtLeast(1)
+                        val timeStr = if (mins >= 60) "${mins / 60}h ${mins % 60}m" else "${mins}m"
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "• ⏱ $timeStr",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
                     if (document.isOfflineAvailable) {
                         Spacer(modifier = Modifier.width(6.dp))
                         Icon(

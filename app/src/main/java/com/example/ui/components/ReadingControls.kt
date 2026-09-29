@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.LineWeight
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -55,6 +56,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -69,6 +71,8 @@ fun ReadingTopBar(
     currentTheme: ReadingTheme,
     isBookmarked: Boolean,
     isHighlightMode: Boolean,
+    sessionDurationText: String = "",
+    isSessionTimerRunning: Boolean = true,
     onBack: () -> Unit,
     onToggleBookmark: () -> Unit,
     onToggleHighlightMode: () -> Unit,
@@ -76,6 +80,7 @@ fun ReadingTopBar(
     onOpenNotesDrawer: () -> Unit,
     onOpenChat: () -> Unit,
     onStartVoiceReading: () -> Unit,
+    onOpenSessionTimer: () -> Unit = {},
     onSelectTheme: (ReadingTheme) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -111,6 +116,47 @@ fun ReadingTopBar(
                 }
             },
             actions = {
+                // Reading Session Timer pill button
+                if (sessionDurationText.isNotBlank()) {
+                    Surface(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(20.dp))
+                            .clickable(onClick = onOpenSessionTimer)
+                            .testTag("reader_timer_chip"),
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.75f),
+                        shape = RoundedCornerShape(20.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(7.dp)
+                                    .clip(CircleShape)
+                                    .background(if (isSessionTimerRunning) Color(0xFF10B981) else Color(0xFFF59E0B))
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Icon(
+                                imageVector = Icons.Default.Timer,
+                                contentDescription = "Timer",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = sessionDurationText,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(4.dp))
+                }
+
                 // Voice Read Aloud button
                 IconButton(onClick = onStartVoiceReading, modifier = Modifier.testTag("reader_voice_read_button")) {
                     Icon(
@@ -212,6 +258,8 @@ fun ReadingBottomBar(
     currentPage: Int,
     totalPages: Int,
     isReadingRulerEnabled: Boolean,
+    sessionDurationText: String = "",
+    onOpenSessionTimer: () -> Unit = {},
     onPageChange: (Int) -> Unit,
     onPrevPage: () -> Unit,
     onNextPage: () -> Unit,
@@ -266,7 +314,7 @@ fun ReadingBottomBar(
                 }
             }
 
-            // Page stats & Ruler toggle
+            // Page stats, session timer & Ruler toggle
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -276,12 +324,43 @@ fun ReadingBottomBar(
             ) {
                 val progressPercent = if (totalPages > 0) ((currentPage + 1).toFloat() / totalPages.toFloat() * 100).toInt() else 0
 
-                Text(
-                    text = "Page ${currentPage + 1} of $totalPages  •  $progressPercent%",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontWeight = FontWeight.Medium
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (sessionDurationText.isNotBlank()) {
+                        Row(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable(onClick = onOpenSessionTimer)
+                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+                                .padding(horizontal = 6.dp, vertical = 3.dp)
+                                .testTag("bottom_session_timer_chip"),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Timer,
+                                contentDescription = "Reading Timer",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(13.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = sessionDurationText,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 11.sp
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                    }
+
+                    Text(
+                        text = "Page ${currentPage + 1} of $totalPages  •  $progressPercent%",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(

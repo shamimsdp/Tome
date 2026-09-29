@@ -129,7 +129,7 @@ jobs:
   release:
     name: Create GitHub Release
     needs: build
-    if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.create_release == true
+    if: success()
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -148,10 +148,16 @@ jobs:
         run: |
           TAG_NAME="${{ github.ref_name }}"
           if [ -z "$TAG_NAME" ] || [ "$TAG_NAME" = "main" ] || [ "$TAG_NAME" = "master" ]; then
-            TAG_NAME="v1.0.0-$(date +'%Y%m%d%H%M')"
+            TAG_NAME="v1.0.0-build-${{ github.run_number }}"
           fi
           echo "RELEASE_TAG=$TAG_NAME" >> $GITHUB_ENV
-          mv release-artifacts/*.apk release-artifacts/Tome-${TAG_NAME}.apk
+          mkdir -p release-artifacts
+          for f in release-artifacts/*.apk; do
+            if [ -f "$f" ]; then
+              mv "$f" "release-artifacts/Tome-${TAG_NAME}.apk"
+              break
+            fi
+          done
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
