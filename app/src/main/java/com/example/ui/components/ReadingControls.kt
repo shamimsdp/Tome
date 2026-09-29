@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.Brush
 import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.LineWeight
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -74,6 +75,7 @@ fun ReadingTopBar(
     onOpenSearch: () -> Unit,
     onOpenNotesDrawer: () -> Unit,
     onOpenChat: () -> Unit,
+    onStartVoiceReading: () -> Unit,
     onSelectTheme: (ReadingTheme) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -109,6 +111,15 @@ fun ReadingTopBar(
                 }
             },
             actions = {
+                // Voice Read Aloud button
+                IconButton(onClick = onStartVoiceReading, modifier = Modifier.testTag("reader_voice_read_button")) {
+                    Icon(
+                        imageVector = Icons.Default.RecordVoiceOver,
+                        contentDescription = "Read Aloud",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+
                 // Ask AI Companion button
                 IconButton(onClick = onOpenChat, modifier = Modifier.testTag("reader_ai_chat_button")) {
                     Icon(

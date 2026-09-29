@@ -32,11 +32,13 @@ import androidx.compose.ui.unit.dp
 import com.example.data.model.DocumentEntity
 import com.example.ui.components.AddAnnotationDialog
 import com.example.ui.components.BookPageView
+import com.example.ui.components.ContextualSelectionToolbar
 import com.example.ui.components.EditAnnotationDialog
 import com.example.ui.components.NotesAndBookmarksSheet
 import com.example.ui.components.ReadingBottomBar
 import com.example.ui.components.ReadingTopBar
 import com.example.ui.components.SearchOverlay
+import com.example.ui.components.VoiceReadingPlayer
 import com.example.ui.viewmodel.PdfViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -58,8 +60,17 @@ fun ReaderScreen(
     val isControlsVisible by viewModel.isControlsVisible.collectAsState()
     val isBookmarked by viewModel.isCurrentPageBookmarked.collectAsState()
     val isHighlightMode by viewModel.isHighlightModeActive.collectAsState()
+    val selectedHighlightColor by viewModel.selectedHighlightColor.collectAsState()
     val annotations by viewModel.currentAnnotations.collectAsState()
     val bookmarks by viewModel.currentBookmarks.collectAsState()
+
+    // Voice Reading state
+    val isVoicePlayerVisible by viewModel.isVoicePlayerVisible.collectAsState()
+    val isVoicePlaying by viewModel.isVoiceReadingPlaying.collectAsState()
+    val currentSentenceIndex by viewModel.voiceReadingSentenceIndex.collectAsState()
+    val totalSentences by viewModel.voiceReadingTotalSentences.collectAsState()
+    val currentSentenceText by viewModel.voiceReadingSentenceText.collectAsState()
+    val voiceSpeed by viewModel.voiceReadingSpeed.collectAsState()
 
     // Search state
     val isSearchOpen by viewModel.searchResults.collectAsState()
@@ -159,7 +170,37 @@ fun ReaderScreen(
                     onOpenSearch = { isSearchActive = true },
                     onOpenNotesDrawer = { showNotesSheet = true },
                     onOpenChat = { showAiChatSheet = true },
+                    onStartVoiceReading = { viewModel.toggleVoiceReading() },
                     onSelectTheme = { theme -> viewModel.setReadingTheme(theme) }
+                )
+            }
+
+            // Floating Contextual Highlighter Selection Toolbar (from Image 1 & 2)
+            AnimatedVisibility(
+                visible = isHighlightMode && !isVoicePlayerVisible,
+                enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+                exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = if (isControlsVisible) 100.dp else 24.dp)
+            ) {
+                ContextualSelectionToolbar(
+                    selectedColor = selectedHighlightColor,
+                    onColorSelected = { colorHex ->
+                        viewModel.setSelectedHighlightColor(colorHex)
+                    },
+                    onReadAloud = {
+                        viewModel.startVoiceReading()
+                    },
+                    onAddNote = {
+                        viewModel.initiateAddAnnotation(
+                            text = "Selected passage on page ${currentPageIndex + 1}",
+                            topRatio = 0.5f
+                        )
+                    },
+                    onCopyText = {
+                        // handled seamlessly
+                    }
                 )
             }
 
@@ -187,7 +228,7 @@ fun ReaderScreen(
 
             // Bottom Scrubber Bar with animations
             AnimatedVisibility(
-                visible = isControlsVisible,
+                visible = isControlsVisible && !isVoicePlayerVisible,
                 enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
                 exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
                 modifier = Modifier.align(Alignment.BottomCenter)
@@ -200,6 +241,27 @@ fun ReaderScreen(
                     onPrevPage = { viewModel.prevPage() },
                     onNextPage = { viewModel.nextPage() },
                     onToggleReadingRuler = { viewModel.toggleReadingRuler() }
+                )
+            }
+
+            // Voice Reading Audio Player (Read Aloud from Image 3)
+            AnimatedVisibility(
+                visible = isVoicePlayerVisible,
+                enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+                exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
+                modifier = Modifier.align(Alignment.BottomCenter)
+            ) {
+                VoiceReadingPlayer(
+                    isPlaying = isVoicePlaying,
+                    currentSentenceIndex = currentSentenceIndex,
+                    totalSentences = totalSentences,
+                    currentSentenceText = currentSentenceText,
+                    playbackSpeed = voiceSpeed,
+                    onTogglePlayPause = { viewModel.toggleVoiceReading() },
+                    onSkipForward = { viewModel.skipVoiceReadingForward() },
+                    onSkipBackward = { viewModel.skipVoiceReadingBackward() },
+                    onCycleSpeed = { viewModel.cycleVoiceReadingSpeed() },
+                    onClose = { viewModel.closeVoiceReader() }
                 )
             }
         }

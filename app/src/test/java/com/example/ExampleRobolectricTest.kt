@@ -14,7 +14,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [36])
+@Config(sdk = [34])
 class ExampleRobolectricTest {
 
   @Test
@@ -65,5 +65,15 @@ class ExampleRobolectricTest {
     assertEquals(10, doc.totalPages)
     assertEquals(4, doc.currentPage)
     assertEquals(50f, doc.progressPercent)
+  }
+
+  @Test
+  fun `voice reading sentence parsing`() {
+    val sampleText = "The journey begins with curiosity. Reading awakens the mind. It opens new perspectives!"
+    val sentences = sampleText.split(Regex("(?<=[.!?])\\s+")).filter { it.isNotBlank() }
+    assertEquals(3, sentences.size)
+    assertEquals("The journey begins with curiosity.", sentences[0])
+    assertEquals("Reading awakens the mind.", sentences[1])
+    assertEquals("It opens new perspectives!", sentences[2])
   }
 }

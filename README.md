@@ -25,7 +25,15 @@
   * **Night Charcoal**: Muted dark theme for comfortable evening reading.
   * **OLED Pure Dark**: True black background for maximum contrast and battery conservation.
 
-### 🖍️ 2. Text Highlighting & Personal Contemplation Notes
+### 🎧 2. Read Aloud & Voice Reading (Text-To-Speech)
+* **Real-Time Voice Reading**: Powered by Android's native `TextToSpeech` engine to read any PDF page or document aloud.
+* **Karaoke Sentence Highlighting**: Tracks and highlights the active spoken sentence in real-time as the audio plays.
+* **Audio Waveform Visualizer**: Live pulsating waveform audio bars inspired by modern audiobook and voice reader apps.
+* **Playback Controls**: Rewind previous sentence, fast-forward next sentence, and play/pause controls.
+* **Adjustable Speech Rate**: One-tap speed pill selector (`0.75x`, `1.0x`, `1.25x`, `1.5x`, `2.0x`).
+* **Instant Listen from Library**: One-tap "Listen Aloud" headphone button on any document card in the library.
+
+### 🖍️ 3. Text Highlighting & Personal Contemplation Notes
 * **6-Color Highlighter Palette**: Amber Gold (`#FFEB3B`), Mint Emerald (`#4CAF50`), Sky Blue (`#03A9F4`), Rose Pink (`#E91E63`), Royal Violet (`#9C27B0`), and Sunset Orange (`#FF9800`).
 * **Category Tagging**: Organize highlights by `Key Takeaway`, `Important`, `Question`, `Quote`, `Vocabulary`, or `Action Item`.
 * **Personal Notes**: Attach custom thoughts, quotes, or summaries to any highlighted passage.

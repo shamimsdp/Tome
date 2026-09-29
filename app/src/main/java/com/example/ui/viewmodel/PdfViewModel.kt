@@ -172,6 +172,7 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun closeDocument() {
+        closeVoiceReader()
         _activeDocument.value = null
         _currentPageBitmap.value = null
         pdfEngine.close()
@@ -181,6 +182,15 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
         val total = _totalPages.value
         val clamped = page.coerceIn(0, (total - 1).coerceAtLeast(0))
         _currentPageIndex.value = clamped
+
+        if (_isVoicePlayerVisible.value) {
+            val pageText = pdfEngine.getPageText(clamped)
+            val wasPlaying = isVoiceReadingPlaying.value
+            voiceReaderEngine.loadText(pageText)
+            if (wasPlaying) {
+                voiceReaderEngine.play()
+            }
+        }
 
         viewModelScope.launch {
             val bitmap = pdfEngine.renderPage(clamped)
@@ -426,6 +436,49 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
     // Gemini Chatbot State
     val geminiChatService = com.example.engine.GeminiChatService()
 
+    // Voice Reader / Read Aloud Engine (TTS)
+    val voiceReaderEngine = com.example.engine.VoiceReaderEngine(application)
+    val isVoiceReadingPlaying: StateFlow<Boolean> = voiceReaderEngine.isPlaying
+    val voiceReadingSentenceIndex: StateFlow<Int> = voiceReaderEngine.currentSentenceIndex
+    val voiceReadingSentenceText: StateFlow<String> = voiceReaderEngine.currentSentenceText
+    val voiceReadingTotalSentences: StateFlow<Int> = voiceReaderEngine.totalSentences
+    val voiceReadingSpeed: StateFlow<Float> = voiceReaderEngine.playbackSpeed
+
+    private val _isVoicePlayerVisible = MutableStateFlow(false)
+    val isVoicePlayerVisible: StateFlow<Boolean> = _isVoicePlayerVisible.asStateFlow()
+
+    fun startVoiceReading() {
+        val pageText = pdfEngine.getPageText(_currentPageIndex.value)
+        voiceReaderEngine.loadText(pageText)
+        _isVoicePlayerVisible.value = true
+        voiceReaderEngine.play()
+    }
+
+    fun toggleVoiceReading() {
+        if (!_isVoicePlayerVisible.value) {
+            startVoiceReading()
+        } else {
+            voiceReaderEngine.togglePlayPause()
+        }
+    }
+
+    fun skipVoiceReadingForward() {
+        voiceReaderEngine.skipForward()
+    }
+
+    fun skipVoiceReadingBackward() {
+        voiceReaderEngine.skipBackward()
+    }
+
+    fun cycleVoiceReadingSpeed() {
+        voiceReaderEngine.cycleSpeed()
+    }
+
+    fun closeVoiceReader() {
+        voiceReaderEngine.stop()
+        _isVoicePlayerVisible.value = false
+    }
+
     private val _chatMessages = MutableStateFlow<List<com.example.data.model.ChatMessage>>(
         listOf(
             com.example.data.model.ChatMessage(
@@ -530,5 +583,11 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
     fun getExportMarkdownForCurrentDoc(): String {
         val doc = _activeDocument.value ?: return ""
         return repository.exportNotesAsMarkdown(doc.title, _currentAnnotations.value)
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        voiceReaderEngine.shutdown()
+        pdfEngine.close()
     }
 }

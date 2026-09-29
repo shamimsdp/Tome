@@ -49,14 +49,31 @@ jobs:
         with:
           gradle-version: '9.3.1'
 
-      - name: Ensure Gradle Wrapper & Permissions
+      - name: Verify Project Structure & Locate Gradle Wrapper
+        id: locate_gradlew
         run: |
-          chmod +x gradlew || true
-          if [ ! -f gradle/wrapper/gradle-wrapper.jar ]; then
-            echo "Generating Gradle wrapper..."
-            gradle wrapper --gradle-version 9.3.1 || true
-            chmod +x gradlew || true
+          echo "=== Verifying Project Structure ==="
+          pwd
+          ls -la
+
+          # Search for gradlew in the workspace root or subdirectories
+          GRADLEW_PATH=$(find . -maxdepth 2 -name "gradlew" -type f | head -n 1)
+
+          if [ -z "$GRADLEW_PATH" ] || [ ! -f "$GRADLEW_PATH" ]; then
+            echo "gradlew not found. Generating Gradle wrapper..."
+            gradle wrapper --gradle-version 9.3.1
+            GRADLEW_PATH="./gradlew"
           fi
+
+          echo "Found Gradle wrapper at: $GRADLEW_PATH"
+          chmod +x "$GRADLEW_PATH"
+          ls -la "$GRADLEW_PATH"
+
+          # Verify it can be executed
+          "$GRADLEW_PATH" --version
+
+          echo "gradle_cmd=$GRADLEW_PATH" >> $GITHUB_ENV
+          echo "gradle_cmd=$GRADLEW_PATH" >> $GITHUB_OUTPUT
 
       - name: Prepare Secrets Configuration
         run: |
@@ -67,29 +84,17 @@ jobs:
 
       - name: Run Unit Tests
         run: |
-          if [ -x "./gradlew" ]; then
-            ./gradlew testDebugUnitTest --no-daemon
-          else
-            gradle testDebugUnitTest --no-daemon
-          fi
+          ${{ env.gradle_cmd }} testDebugUnitTest --no-daemon
 
       - name: Build Debug APK
         if: ${{ github.event.inputs.build_type == 'debug' }}
         run: |
-          if [ -x "./gradlew" ]; then
-            ./gradlew assembleDebug --no-daemon
-          else
-            gradle assembleDebug --no-daemon
-          fi
+          ${{ env.gradle_cmd }} assembleDebug --no-daemon
 
       - name: Build Release APK
         if: ${{ github.event.inputs.build_type != 'debug' }}
         run: |
-          if [ -x "./gradlew" ]; then
-            ./gradlew assembleRelease --no-daemon || ./gradlew assembleDebug --no-daemon
-          else
-            gradle assembleRelease --no-daemon || gradle assembleDebug --no-daemon
-          fi
+          ${{ env.gradle_cmd }} assembleRelease --no-daemon || ${{ env.gradle_cmd }} assembleDebug --no-daemon
         env:
           KEYSTORE_PATH: ${{ secrets.KEYSTORE_PATH }}
           STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
