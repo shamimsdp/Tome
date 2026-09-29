@@ -3,6 +3,7 @@ package com.example.ui.screens
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -66,10 +67,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.R
 import com.example.data.model.DocumentEntity
 import com.example.ui.viewmodel.PdfViewModel
 import java.text.SimpleDateFormat
@@ -184,23 +187,14 @@ fun LibraryScreen(
                             }
                         }
 
-                        // Profile / Avatar circle (from Image 1 & 2)
-                        Box(
+                        // App Logo (from user's uploaded icon)
+                        Image(
+                            painter = painterResource(id = R.drawable.img_app_logo),
+                            contentDescription = "Tome Logo",
                             modifier = Modifier
-                                .size(44.dp)
-                                .clip(CircleShape)
-                                .background(
-                                    Brush.linearGradient(
-                                        listOf(Color(0xFF3B82F6), Color(0xFF6366F1))
-                                    )
-                                ),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "📖",
-                                fontSize = 20.sp
-                            )
-                        }
+                                .size(46.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                        )
                     }
                 }
 

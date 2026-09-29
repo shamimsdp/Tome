@@ -127,8 +127,13 @@ class PdfEngine {
         return results
     }
 
-    fun getPageText(pageIndex: Int): String {
-        return textIndexByPage[pageIndex] ?: ""
+    fun getPageText(pageIndex: Int, defaultTitle: String = "", totalPages: Int = 1): String {
+        val indexed = textIndexByPage[pageIndex]
+        if (!indexed.isNullOrBlank()) {
+            return indexed
+        }
+        val title = defaultTitle.ifBlank { currentFile?.nameWithoutExtension ?: "Document" }
+        return "$title. Page ${pageIndex + 1} of $totalPages."
     }
 
     fun close() {

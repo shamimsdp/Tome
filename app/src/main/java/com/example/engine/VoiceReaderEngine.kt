@@ -13,6 +13,9 @@ class VoiceReaderEngine(private val context: Context) : TextToSpeech.OnInitListe
 
     private var tts: TextToSpeech? = null
     private var isInitialized = false
+    private var pendingPlayOnReady = false
+
+    var onPageCompleted: (() -> Unit)? = null
 
     private val _isPlaying = MutableStateFlow(false)
     val isPlaying: StateFlow<Boolean> = _isPlaying.asStateFlow()
@@ -38,11 +41,20 @@ class VoiceReaderEngine(private val context: Context) : TextToSpeech.OnInitListe
     override fun onInit(status: Int) {
         if (status == TextToSpeech.SUCCESS) {
             tts?.let { engine ->
-                val result = engine.setLanguage(Locale.US)
+                val locale = Locale.getDefault().takeIf {
+                    engine.isLanguageAvailable(it) >= TextToSpeech.LANG_AVAILABLE
+                } ?: Locale.US
+
+                val result = engine.setLanguage(locale)
                 if (result != TextToSpeech.LANG_MISSING_DATA && result != TextToSpeech.LANG_NOT_SUPPORTED) {
                     isInitialized = true
                     engine.setSpeechRate(_playbackSpeed.value)
                     setupUtteranceListener()
+
+                    if (pendingPlayOnReady && sentences.isNotEmpty()) {
+                        pendingPlayOnReady = false
+                        play()
+                    }
                 }
             }
         }
@@ -59,8 +71,10 @@ class VoiceReaderEngine(private val context: Context) : TextToSpeech.OnInitListe
                 if (nextIndex < sentences.size && _isPlaying.value) {
                     _currentSentenceIndex.value = nextIndex
                     speakCurrentSentence()
-                } else {
+                } else if (_isPlaying.value) {
                     _isPlaying.value = false
+                    // Notify that current page's reading is complete
+                    onPageCompleted?.invoke()
                 }
             }
 
@@ -82,25 +96,31 @@ class VoiceReaderEngine(private val context: Context) : TextToSpeech.OnInitListe
             .map { it.trim() }
             .filter { it.isNotBlank() }
 
-        sentences = if (parsed.isNotEmpty()) parsed else listOf(cleaned)
+        sentences = if (parsed.isNotEmpty()) parsed else if (cleaned.isNotBlank()) listOf(cleaned) else emptyList()
         _totalSentences.value = sentences.size
         _currentSentenceIndex.value = 0
         _currentSentenceText.value = sentences.firstOrNull() ?: ""
     }
 
     fun play() {
-        if (!isInitialized || sentences.isEmpty()) return
+        if (sentences.isEmpty()) return
+        if (!isInitialized) {
+            pendingPlayOnReady = true
+            return
+        }
         _isPlaying.value = true
         speakCurrentSentence()
     }
 
     fun pause() {
         _isPlaying.value = false
+        pendingPlayOnReady = false
         tts?.stop()
     }
 
     fun stop() {
         _isPlaying.value = false
+        pendingPlayOnReady = false
         _currentSentenceIndex.value = 0
         _currentSentenceText.value = sentences.firstOrNull() ?: ""
         tts?.stop()
@@ -115,7 +135,8 @@ class VoiceReaderEngine(private val context: Context) : TextToSpeech.OnInitListe
     }
 
     fun skipForward() {
-        val next = (_currentSentenceIndex.value + 1).coerceAtMost((sentences.size - 1).coerceAtLeast(0))
+        if (sentences.isEmpty()) return
+        val next = (_currentSentenceIndex.value + 1).coerceAtMost(sentences.size - 1)
         _currentSentenceIndex.value = next
         if (_isPlaying.value) {
             speakCurrentSentence()
@@ -125,6 +146,7 @@ class VoiceReaderEngine(private val context: Context) : TextToSpeech.OnInitListe
     }
 
     fun skipBackward() {
+        if (sentences.isEmpty()) return
         val prev = (_currentSentenceIndex.value - 1).coerceAtLeast(0)
         _currentSentenceIndex.value = prev
         if (_isPlaying.value) {
@@ -170,5 +192,6 @@ class VoiceReaderEngine(private val context: Context) : TextToSpeech.OnInitListe
         tts?.shutdown()
         tts = null
         isInitialized = false
+        pendingPlayOnReady = false
     }
 }

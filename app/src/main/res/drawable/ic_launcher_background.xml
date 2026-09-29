@@ -9,19 +9,15 @@
         android:pathData="M0,0h108v108h-108z">
         <aapt:attr name="android:fillColor">
             <gradient
-                android:startX="12"
-                android:startY="12"
-                android:endX="96"
-                android:endY="96"
+                android:startX="54"
+                android:startY="0"
+                android:endX="54"
+                android:endY="108"
                 android:type="linear">
-                <item android:offset="0.0" android:color="#1A237E" />
-                <item android:offset="0.6" android:color="#1565C0" />
-                <item android:offset="1.0" android:color="#0D47A1" />
+                <item android:offset="0.0" android:color="#0284C7" />
+                <item android:offset="0.5" android:color="#0369A1" />
+                <item android:offset="1.0" android:color="#075985" />
             </gradient>
         </aapt:attr>
     </path>
-    <!-- Subtle book grid / accent circles -->
-    <path
-        android:fillColor="#15FFFFFF"
-        android:pathData="M54,14 A40,40 0 1,0 54,94 A40,40 0 1,0 54,14 Z" />
 </vector>

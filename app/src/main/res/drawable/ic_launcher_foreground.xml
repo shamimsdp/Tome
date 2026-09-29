@@ -1,70 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="108dp"
-    android:height="108dp"
-    android:viewportWidth="108"
-    android:viewportHeight="108">
-    <!-- Left page shadow / background layer -->
-    <path
-        android:fillColor="#E2E8F0"
-        android:pathData="M27,34 C27,31 30,29 33,29 L51,32 L51,77 L33,74 C30,73.5 27,71.5 27,69 Z" />
-    <!-- Right page shadow / background layer -->
-    <path
-        android:fillColor="#CBD5E1"
-        android:pathData="M81,34 C81,31 78,29 75,29 L57,32 L57,77 L75,74 C78,73.5 81,71.5 81,69 Z" />
-    <!-- Main open book - left page -->
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M29,32 C29,29.8 31,28 34,28 L53,30.5 L53,75.5 L34,73 C31,72.6 29,70.8 29,68.6 Z" />
-    <!-- Main open book - right page -->
-    <path
-        android:fillColor="#F8FAFC"
-        android:pathData="M79,32 C79,29.8 77,28 74,28 L55,30.5 L55,75.5 L74,73 C77,72.6 79,70.8 79,68.6 Z" />
-    <!-- Book spine / gutter line -->
-    <path
-        android:fillColor="#94A3B8"
-        android:pathData="M53,30.5 L55,30.5 L55,75.5 L53,75.5 Z" />
-    <!-- Lines on left page (text lines) -->
-    <path
-        android:fillColor="#93C5FD"
-        android:pathData="M34,37 L48,38.5 L48,41 L34,39.5 Z" />
-    <path
-        android:fillColor="#93C5FD"
-        android:pathData="M34,44 L48,45.5 L48,48 L34,46.5 Z" />
-    <path
-        android:fillColor="#FBBF24"
-        android:pathData="M34,51 L48,52.5 L48,55 L34,53.5 Z" />
-    <path
-        android:fillColor="#93C5FD"
-        android:pathData="M34,58 L45,59.2 L45,61.7 L34,60.5 Z" />
-    <!-- Lines on right page (text lines) -->
-    <path
-        android:fillColor="#93C5FD"
-        android:pathData="M60,38.5 L74,37 L74,39.5 L60,41 Z" />
-    <path
-        android:fillColor="#F43F5E"
-        android:pathData="M60,45.5 L74,44 L74,46.5 L60,48 Z" />
-    <path
-        android:fillColor="#93C5FD"
-        android:pathData="M60,52.5 L74,51 L74,53.5 L60,55 Z" />
-    <path
-        android:fillColor="#93C5FD"
-        android:pathData="M60,59.2 L71,58 L71,60.5 L60,61.7 Z" />
-    <!-- Bookmark ribbon hanging down from top of right page -->
-    <path
-        android:fillColor="#EF4444"
-        android:pathData="M64,28 L70,28 L70,50 L67,46 L64,50 Z" />
-    <!-- PDF badge in bottom center -->
-    <path
-        android:fillColor="#EF4444"
-        android:pathData="M44,70 L64,70 C66,70 68,72 68,74 L68,78 C68,80 66,82 64,82 L44,82 C42,82 40,80 40,78 L40,74 C40,72 42,70 44,70 Z" />
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M45,73 H47.5 C48.5,73 49,73.5 49,74.5 C49,75.5 48.5,76 47.5,76 H46 V79 H45 Z M46,74 V75.2 H47.3 C47.7,75.2 48,74.9 48,74.6 C48,74.3 47.7,74 47.3,74 Z" />
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M51,73 H53.5 C55,73 56,74.2 56,76 C56,77.8 55,79 53.5,79 H51 Z M52,74.2 V77.8 H53.3 C54.3,77.8 55,77 55,76 C55,75 54.3,74.2 53.3,74.2 Z" />
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M58,73 H63 V74.2 H59 V75.4 H62.5 V76.6 H59 V79 H58 Z" />
-</vector>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:width="66dp"
+        android:height="66dp"
+        android:drawable="@drawable/img_app_logo"
+        android:gravity="center" />
+</layer-list>

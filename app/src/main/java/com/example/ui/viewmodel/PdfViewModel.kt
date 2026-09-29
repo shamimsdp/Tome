@@ -184,7 +184,7 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
         _currentPageIndex.value = clamped
 
         if (_isVoicePlayerVisible.value) {
-            val pageText = pdfEngine.getPageText(clamped)
+            val pageText = pdfEngine.getPageText(clamped, _activeDocument.value?.title ?: "", total)
             val wasPlaying = isVoiceReadingPlaying.value
             voiceReaderEngine.loadText(pageText)
             if (wasPlaying) {
@@ -444,11 +444,24 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
     val voiceReadingTotalSentences: StateFlow<Int> = voiceReaderEngine.totalSentences
     val voiceReadingSpeed: StateFlow<Float> = voiceReaderEngine.playbackSpeed
 
+    init {
+        voiceReaderEngine.onPageCompleted = {
+            if (_currentPageIndex.value < _totalPages.value - 1) {
+                viewModelScope.launch {
+                    nextPage()
+                }
+            } else {
+                _statusMessage.value = "Document voice reading completed"
+            }
+        }
+    }
+
     private val _isVoicePlayerVisible = MutableStateFlow(false)
     val isVoicePlayerVisible: StateFlow<Boolean> = _isVoicePlayerVisible.asStateFlow()
 
     fun startVoiceReading() {
-        val pageText = pdfEngine.getPageText(_currentPageIndex.value)
+        val doc = _activeDocument.value
+        val pageText = pdfEngine.getPageText(_currentPageIndex.value, doc?.title ?: "", _totalPages.value)
         voiceReaderEngine.loadText(pageText)
         _isVoicePlayerVisible.value = true
         voiceReaderEngine.play()
