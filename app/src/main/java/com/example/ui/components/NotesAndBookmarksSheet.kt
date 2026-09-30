@@ -41,6 +41,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -60,6 +61,7 @@ import com.example.data.model.BookmarkEntity
 @Composable
 fun NotesAndBookmarksSheet(
     bookTitle: String,
+    author: String = "",
     annotations: List<AnnotationEntity>,
     bookmarks: List<BookmarkEntity>,
     onSelectPage: (Int) -> Unit,
@@ -71,6 +73,7 @@ fun NotesAndBookmarksSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var selectedTab by remember { mutableIntStateOf(0) }
+    var showExportSheet by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
     ModalBottomSheet(
@@ -133,19 +136,13 @@ fun NotesAndBookmarksSheet(
                     )
                     FilledTonalButton(
                         onClick = {
-                            val markdown = onExportMarkdown()
-                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                type = "text/plain"
-                                putExtra(Intent.EXTRA_SUBJECT, "Notes for $bookTitle")
-                                putExtra(Intent.EXTRA_TEXT, markdown)
-                            }
-                            context.startActivity(Intent.createChooser(shareIntent, "Export Notes"))
+                            showExportSheet = true
                         },
                         modifier = Modifier.testTag("export_notes_button")
                     ) {
                         Icon(imageVector = Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Export Markdown")
+                        Text("Export PDF / TXT")
                     }
                 }
 
@@ -338,5 +335,14 @@ fun NotesAndBookmarksSheet(
                 }
             }
         }
+    }
+
+    if (showExportSheet) {
+        ExportAnnotationsSheet(
+            bookTitle = bookTitle,
+            author = author,
+            annotations = annotations,
+            onDismiss = { showExportSheet = false }
+        )
     }
 }

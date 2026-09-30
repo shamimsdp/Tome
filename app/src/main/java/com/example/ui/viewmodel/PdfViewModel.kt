@@ -323,6 +323,12 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
         if (clamped != _currentPageIndex.value) {
             _lastPageTurnDelta.value = if (clamped > _currentPageIndex.value) 1 else -1
         }
+
+        // Immediately update bitmap from cache if available to prevent animation flicker
+        pdfEngine.getCachedBitmap(clamped)?.let {
+            _currentPageBitmap.value = it
+        }
+
         _currentPageIndex.value = clamped
 
         _sessionVisitedPages.add(clamped)
@@ -341,6 +347,14 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
             val bitmap = pdfEngine.renderPage(clamped)
             _currentPageBitmap.value = bitmap
             checkBookmarkStatus()
+
+            // Pre-fetch adjacent pages into cache so next page turns are instantaneous
+            if (clamped + 1 < total) {
+                pdfEngine.renderPage(clamped + 1)
+            }
+            if (clamped - 1 >= 0) {
+                pdfEngine.renderPage(clamped - 1)
+            }
 
             _activeDocument.value?.let { doc ->
                 repository.updateReadingProgress(doc.id, clamped, total)
@@ -597,6 +611,17 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _lastPageTurnDelta = MutableStateFlow(1) // +1 for next, -1 for prev
     val lastPageTurnDelta: StateFlow<Int> = _lastPageTurnDelta.asStateFlow()
+
+    // Flip Gesture Direction preference: true = Drag Right for Next Page (user requested natural direction), false = Drag Left for Next Page
+    private val _isNaturalFlipDirection = MutableStateFlow(readerPrefs.getBoolean("pref_natural_flip_direction", true))
+    val isNaturalFlipDirection: StateFlow<Boolean> = _isNaturalFlipDirection.asStateFlow()
+
+    fun toggleFlipDirection() {
+        val newVal = !_isNaturalFlipDirection.value
+        _isNaturalFlipDirection.value = newVal
+        readerPrefs.edit().putBoolean("pref_natural_flip_direction", newVal).apply()
+        _statusMessage.value = if (newVal) "Gesture: Swipe Right for Next Page" else "Gesture: Swipe Left for Next Page"
+    }
 
     fun togglePageFlip() {
         val newVal = !_isPageFlipEnabled.value

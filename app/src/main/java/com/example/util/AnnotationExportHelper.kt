@@ -54,8 +54,8 @@ object AnnotationExportHelper {
             }
 
             sb.append("• [${ann.tag.uppercase()}] (${ann.colorHex})\n")
-            if (ann.selectedText.isNotBlank()) {
-                sb.append("  Quote: \"${ann.selectedText}\"\n")
+            if (ann.highlightedText.isNotBlank()) {
+                sb.append("  Quote: \"${ann.highlightedText}\"\n")
             }
             if (ann.note.isNotBlank()) {
                 sb.append("  Note:  ${ann.note}\n")
@@ -179,7 +179,7 @@ object AnnotationExportHelper {
             canvas.drawText("Page ${ann.pageNumber + 1}  •  [${ann.tag.uppercase()}]", 55f, yPos + 18f, pageHeaderPaint)
 
             // Quote snippet (1 line)
-            val quoteText = if (ann.selectedText.isNotBlank()) "\"${ann.selectedText.take(85)}\"" else "Highlight on page ${ann.pageNumber + 1}"
+            val quoteText = if (ann.highlightedText.isNotBlank()) "\"${ann.highlightedText.take(85)}\"" else "Highlight on page ${ann.pageNumber + 1}"
             canvas.drawText(quoteText, 55f, yPos + 34f, quotePaint)
 
             // User Note if available

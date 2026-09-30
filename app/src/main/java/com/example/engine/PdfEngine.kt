@@ -36,6 +36,11 @@ class PdfEngine {
     // In-memory text index for full-text search
     private val textIndexByPage = mutableMapOf<Int, String>()
 
+    fun getCachedBitmap(pageIndex: Int): Bitmap? {
+        val cacheKey = "${currentFile?.absolutePath}_$pageIndex"
+        return bitmapCache.get(cacheKey)
+    }
+
     suspend fun openFile(file: File): Int = withContext(Dispatchers.IO) {
         mutex.withLock {
             close()

@@ -17,9 +17,9 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -40,6 +40,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -54,6 +55,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -61,6 +63,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.AnnotationEntity
 import com.example.data.model.ReadingTheme
+import com.example.engine.PdfEngine
 import com.example.engine.SearchMatch
 
 @Composable
@@ -68,6 +71,7 @@ fun BookPageView(
     bitmap: Bitmap?,
     pageIndex: Int,
     totalPages: Int,
+    pdfEngine: PdfEngine,
     readingTheme: ReadingTheme,
     isBookmarked: Boolean,
     annotations: List<AnnotationEntity>,
@@ -76,6 +80,7 @@ fun BookPageView(
     isReadingRulerEnabled: Boolean,
     readingRulerRatio: Float,
     isPageFlipEnabled: Boolean = true,
+    isNaturalFlipDirection: Boolean = true,
     pageTurnDelta: Int = 1,
     onTapLeft: () -> Unit,
     onTapRight: () -> Unit,
@@ -98,32 +103,32 @@ fun BookPageView(
         val containerWidth = maxWidth
         val containerHeight = maxHeight
 
-        // Animated Page Content with Page Flipping Transition
+        // Animated Page Content with True 3D Book Page Flip Transition
         AnimatedContent(
-            targetState = pageIndex to bitmap,
+            targetState = pageIndex,
             transitionSpec = {
                 if (!isPageFlipEnabled) {
                     EnterTransition.None togetherWith ExitTransition.None
                 } else {
-                    val isNext = targetState.first >= initialState.first
-                    if (isNext) {
+                    val isForward = targetState > initialState
+                    if (isForward) {
                         (slideInHorizontally(
                             initialOffsetX = { fullWidth -> fullWidth },
-                            animationSpec = tween(durationMillis = 350, easing = FastOutSlowInEasing)
-                        ) + fadeIn(animationSpec = tween(280))).togetherWith(
+                            animationSpec = tween(durationMillis = 360, easing = FastOutSlowInEasing)
+                        ) + fadeIn(animationSpec = tween(260))).togetherWith(
                             slideOutHorizontally(
-                                targetOffsetX = { fullWidth -> -fullWidth / 3 },
-                                animationSpec = tween(durationMillis = 350, easing = FastOutSlowInEasing)
+                                targetOffsetX = { fullWidth -> -fullWidth / 2 },
+                                animationSpec = tween(durationMillis = 360, easing = FastOutSlowInEasing)
                             ) + fadeOut(animationSpec = tween(220))
                         )
                     } else {
                         (slideInHorizontally(
                             initialOffsetX = { fullWidth -> -fullWidth },
-                            animationSpec = tween(durationMillis = 350, easing = FastOutSlowInEasing)
-                        ) + fadeIn(animationSpec = tween(280))).togetherWith(
+                            animationSpec = tween(durationMillis = 360, easing = FastOutSlowInEasing)
+                        ) + fadeIn(animationSpec = tween(260))).togetherWith(
                             slideOutHorizontally(
-                                targetOffsetX = { fullWidth -> fullWidth / 3 },
-                                animationSpec = tween(durationMillis = 350, easing = FastOutSlowInEasing)
+                                targetOffsetX = { fullWidth -> fullWidth / 2 },
+                                animationSpec = tween(durationMillis = 360, easing = FastOutSlowInEasing)
                             ) + fadeOut(animationSpec = tween(220))
                         )
                     }
@@ -131,11 +136,34 @@ fun BookPageView(
             },
             label = "book_page_flip_animation",
             modifier = Modifier.fillMaxSize()
-        ) { (renderedPageIndex, renderedBitmap) ->
-            // Physical book page sheet with realistic rounded edge and soft depth shadow
+        ) { renderedPageIndex ->
+            // Resolve page bitmap: if cached, grab cached immediately so both outgoing and incoming pages render simultaneously
+            val renderedBitmap by produceState(
+                initialValue = pdfEngine.getCachedBitmap(renderedPageIndex) ?: if (renderedPageIndex == pageIndex) bitmap else null,
+                key1 = renderedPageIndex,
+                key2 = bitmap
+            ) {
+                val cached = pdfEngine.getCachedBitmap(renderedPageIndex)
+                if (cached != null) {
+                    value = cached
+                } else if (renderedPageIndex == pageIndex && bitmap != null) {
+                    value = bitmap
+                } else {
+                    value = pdfEngine.renderPage(renderedPageIndex)
+                }
+            }
+
+            // Physical book page sheet with realistic rounded edge, elevation and subtle curl rotation
             Surface(
                 modifier = Modifier
                     .fillMaxSize()
+                    .graphicsLayer {
+                        // Subtle 3D perspective tilt while dragging
+                        if (kotlin.math.abs(accumulatedDragX) > 10f) {
+                            rotationY = (accumulatedDragX / 120f).coerceIn(-12f, 12f)
+                            cameraDistance = 16f * density
+                        }
+                    }
                     .shadow(
                         elevation = 6.dp,
                         shape = RoundedCornerShape(4.dp),
@@ -148,7 +176,7 @@ fun BookPageView(
                     if (renderedBitmap != null) {
                         // Bitmap Page Rendering with Reading Theme Color Tint
                         Image(
-                            bitmap = renderedBitmap.asImageBitmap(),
+                            bitmap = renderedBitmap!!.asImageBitmap(),
                             contentDescription = "PDF Page ${renderedPageIndex + 1}",
                             modifier = Modifier
                                 .fillMaxSize()
@@ -180,24 +208,24 @@ fun BookPageView(
                         }
                     }
 
-                    // Realistic book spine shadow in the left gutter
+                    // Realistic book spine shadow in the left gutter (bound book effect)
                     Box(
                         modifier = Modifier
                             .fillMaxHeight()
-                            .width(28.dp)
+                            .width(26.dp)
                             .align(Alignment.CenterStart)
                             .background(
                                 Brush.horizontalGradient(
                                     colors = listOf(
-                                        readingTheme.spineShadowColor,
-                                        readingTheme.spineShadowColor.copy(alpha = 0.05f),
+                                        readingTheme.spineShadowColor.copy(alpha = 0.28f),
+                                        readingTheme.spineShadowColor.copy(alpha = 0.08f),
                                         Color.Transparent
                                     )
                                 )
                             )
                     )
 
-                    // Soft right edge page curl gradient
+                    // Soft right edge page curl gradient (simulates paper stack depth)
                     Box(
                         modifier = Modifier
                             .fillMaxHeight()
@@ -221,32 +249,34 @@ fun BookPageView(
 
                         // Draw all annotations for this page
                         for (ann in annotations) {
-                            val parsedColor = try {
-                                Color(android.graphics.Color.parseColor(ann.colorHex))
-                            } catch (_: Exception) {
-                                Color(0xFFFFEB3B)
+                            if (ann.pageNumber == renderedPageIndex) {
+                                val parsedColor = try {
+                                    Color(android.graphics.Color.parseColor(ann.colorHex))
+                                } catch (_: Exception) {
+                                    Color(0xFFFFEB3B)
+                                }
+
+                                val top = ann.topRatio * canvasHeight
+                                val height = ann.heightRatio * canvasHeight
+                                val left = ann.leftRatio * canvasWidth
+                                val width = ann.widthRatio * canvasWidth
+
+                                // Draw soft marker highlighter rectangle
+                                drawRoundRect(
+                                    color = parsedColor.copy(alpha = 0.42f),
+                                    topLeft = Offset(left, top),
+                                    size = Size(width, height),
+                                    cornerRadius = CornerRadius(6f, 6f)
+                                )
+
+                                // Draw small indicator bar on margin
+                                drawRoundRect(
+                                    color = parsedColor,
+                                    topLeft = Offset(left - 8f, top),
+                                    size = Size(4f, height),
+                                    cornerRadius = CornerRadius(2f, 2f)
+                                )
                             }
-
-                            val top = ann.topRatio * canvasHeight
-                            val height = ann.heightRatio * canvasHeight
-                            val left = ann.leftRatio * canvasWidth
-                            val width = ann.widthRatio * canvasWidth
-
-                            // Draw soft marker highlighter rectangle
-                            drawRoundRect(
-                                color = parsedColor.copy(alpha = 0.42f),
-                                topLeft = Offset(left, top),
-                                size = Size(width, height),
-                                cornerRadius = CornerRadius(6f, 6f)
-                            )
-
-                            // Draw small indicator bar on margin
-                            drawRoundRect(
-                                color = parsedColor,
-                                topLeft = Offset(left - 8f, top),
-                                size = Size(4f, height),
-                                cornerRadius = CornerRadius(2f, 2f)
-                            )
                         }
 
                         // Search Matches highlight on page
@@ -264,7 +294,7 @@ fun BookPageView(
                     }
 
                     // Interactive Annotation Note Badges
-                    annotations.forEach { annotation ->
+                    annotations.filter { it.pageNumber == renderedPageIndex }.forEach { annotation ->
                         val topOffset = (containerHeight.value * annotation.topRatio).dp
                         Box(
                             modifier = Modifier
@@ -293,7 +323,7 @@ fun BookPageView(
 
                     // Dog-Ear Ribbon Bookmark in top-right corner
                     AnimatedVisibility(
-                        visible = isBookmarked,
+                        visible = isBookmarked && renderedPageIndex == pageIndex,
                         enter = fadeIn(),
                         exit = fadeOut(),
                         modifier = Modifier.align(Alignment.TopEnd)
@@ -340,58 +370,81 @@ fun BookPageView(
                                 .height(34.dp)
                                 .background(Color(0x303B82F6))
                                 .border(1.5.dp, Color(0xFF3B82F6).copy(alpha = 0.7f), RoundedCornerShape(2.dp))
-                            .pointerInput(Unit) {
-                                detectDragGestures { change, dragAmount ->
-                                    change.consume()
-                                    val newRatio = (rulerY.toPx() + dragAmount.y) / size.height
-                                    onRulerPositionChange(newRatio)
+                                .pointerInput(Unit) {
+                                    detectDragGestures { change, dragAmount ->
+                                        change.consume()
+                                        val newRatio = (rulerY.toPx() + dragAmount.y) / size.height
+                                        onRulerPositionChange(newRatio)
+                                    }
                                 }
-                            }
-                            .testTag("reading_ruler_overlay")
+                                .testTag("reading_ruler_overlay")
                         )
                     }
 
-                    // Touch & Swipe Gestures Overlay (Tap zones + Horizontal drag to flip)
+                    // Touch & Swipe Gestures Overlay (Clean unified gesture handling)
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .pointerInput(isHighlightMode) {
-                                detectTapGestures(
-                                    onTap = { offset ->
-                                        val xRatio = offset.x / size.width
-                                        val yRatio = offset.y / size.height
+                            .pointerInput(isHighlightMode, isPageFlipEnabled, isNaturalFlipDirection) {
+                                awaitEachGesture {
+                                    val down = awaitFirstDown(requireUnconsumed = false)
+                                    var totalDragX = 0f
+                                    var isDrag = false
+                                    val touchSlop = viewConfiguration.touchSlop
 
-                                        if (isHighlightMode) {
-                                            onAddHighlightAtRatio(yRatio)
+                                    while (true) {
+                                        val event = awaitPointerEvent()
+                                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
+
+                                        if (!change.pressed) {
+                                            // Pointer released
+                                            if (!isDrag) {
+                                                // Handle tap
+                                                val xRatio = down.position.x / size.width
+                                                val yRatio = down.position.y / size.height
+
+                                                if (isHighlightMode) {
+                                                    onAddHighlightAtRatio(yRatio)
+                                                } else {
+                                                    when {
+                                                        xRatio < 0.25f -> onTapLeft()
+                                                        xRatio > 0.75f -> onTapRight()
+                                                        else -> onTapCenter()
+                                                    }
+                                                }
+                                            } else {
+                                                // Handle horizontal drag / swipe
+                                                val threshold = 35f
+                                                if (totalDragX > threshold) {
+                                                    // Swiped from left to right (positive drag)
+                                                    // By default (natural book flip): swipe right = NEXT page
+                                                    if (isNaturalFlipDirection) {
+                                                        onTapRight()
+                                                    } else {
+                                                        onTapLeft()
+                                                    }
+                                                } else if (totalDragX < -threshold) {
+                                                    // Swiped from right to left (negative drag)
+                                                    // By default: swipe left = PREVIOUS page
+                                                    if (isNaturalFlipDirection) {
+                                                        onTapLeft()
+                                                    } else {
+                                                        onTapRight()
+                                                    }
+                                                }
+                                            }
+                                            accumulatedDragX = 0f
+                                            break
                                         } else {
-                                            when {
-                                                xRatio < 0.22f -> onTapLeft()
-                                                xRatio > 0.78f -> onTapRight()
-                                                else -> onTapCenter()
+                                            val dragDelta = change.position.x - change.previousPosition.x
+                                            totalDragX += dragDelta
+                                            if (kotlin.math.abs(totalDragX) > touchSlop) {
+                                                isDrag = true
+                                                change.consume()
+                                                accumulatedDragX = totalDragX
                                             }
                                         }
                                     }
-                                )
-                            }
-                            .pointerInput(isHighlightMode, isPageFlipEnabled) {
-                                if (!isHighlightMode && isPageFlipEnabled) {
-                                    detectHorizontalDragGestures(
-                                        onHorizontalDrag = { change, dragAmount ->
-                                            change.consume()
-                                            accumulatedDragX += dragAmount
-                                        },
-                                        onDragEnd = {
-                                            if (accumulatedDragX < -50f) {
-                                                onTapRight() // Swipe left -> next page
-                                            } else if (accumulatedDragX > 50f) {
-                                                onTapLeft() // Swipe right -> prev page
-                                            }
-                                            accumulatedDragX = 0f
-                                        },
-                                        onDragCancel = {
-                                            accumulatedDragX = 0f
-                                        }
-                                    )
                                 }
                             }
                     )

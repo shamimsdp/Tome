@@ -30,10 +30,12 @@ import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Brush
 import androidx.compose.material.icons.filled.EditNote
+import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.LineWeight
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -75,12 +77,16 @@ fun ReadingTopBar(
     sessionDurationText: String = "",
     isSessionTimerRunning: Boolean = true,
     isPageFlipEnabled: Boolean = true,
+    isNaturalFlipDirection: Boolean = true,
     onBack: () -> Unit,
     onToggleBookmark: () -> Unit,
     onToggleHighlightMode: () -> Unit,
     onTogglePageFlip: () -> Unit = {},
+    onToggleFlipDirection: () -> Unit = {},
     onOpenSearch: () -> Unit,
     onOpenNotesDrawer: () -> Unit,
+    onOpenThumbnailGrid: () -> Unit = {},
+    onOpenExportSheet: () -> Unit = {},
     onOpenChat: () -> Unit,
     onStartVoiceReading: () -> Unit,
     onOpenSessionTimer: () -> Unit = {},
@@ -88,6 +94,7 @@ fun ReadingTopBar(
     modifier: Modifier = Modifier
 ) {
     var themeMenuExpanded by remember { mutableStateOf(false) }
+    var pageFlipMenuExpanded by remember { mutableStateOf(false) }
 
     Surface(
         modifier = modifier.fillMaxWidth(),
@@ -244,18 +251,62 @@ fun ReadingTopBar(
                     }
                 }
 
-                // Page flip animation toggle button
-                IconButton(onClick = onTogglePageFlip, modifier = Modifier.testTag("reader_page_flip_toggle")) {
-                    Icon(
-                        imageVector = Icons.Default.AutoStories,
-                        contentDescription = if (isPageFlipEnabled) "Page Flip Animation: ON" else "Page Flip Animation: OFF",
-                        tint = if (isPageFlipEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                // Page flip animation & gesture direction menu
+                Box {
+                    IconButton(
+                        onClick = { pageFlipMenuExpanded = true },
+                        modifier = Modifier.testTag("reader_page_flip_toggle")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AutoStories,
+                            contentDescription = if (isPageFlipEnabled) "Page Flip Animation: ON" else "Page Flip Animation: OFF",
+                            tint = if (isPageFlipEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    DropdownMenu(
+                        expanded = pageFlipMenuExpanded,
+                        onDismissRequest = { pageFlipMenuExpanded = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = {
+                                Text(if (isPageFlipEnabled) "✓ 3D Page Flip: ON" else "○ 3D Page Flip: OFF")
+                            },
+                            onClick = {
+                                onTogglePageFlip()
+                                pageFlipMenuExpanded = false
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    if (isNaturalFlipDirection)
+                                        "✓ Gesture: Swipe Right = Next Page"
+                                    else
+                                        "✓ Gesture: Swipe Left = Next Page"
+                                )
+                            },
+                            onClick = {
+                                onToggleFlipDirection()
+                                pageFlipMenuExpanded = false
+                            }
+                        )
+                    }
                 }
 
                 // All Notes & Bookmarks drawer
                 IconButton(onClick = onOpenNotesDrawer, modifier = Modifier.testTag("reader_notes_drawer_button")) {
                     Icon(imageVector = Icons.Default.EditNote, contentDescription = "View Notes & Bookmarks")
+                }
+
+                // Thumbnail Grid View button
+                IconButton(onClick = onOpenThumbnailGrid, modifier = Modifier.testTag("reader_thumbnail_grid_button")) {
+                    Icon(imageVector = Icons.Default.GridView, contentDescription = "Page Thumbnails")
+                }
+
+                // Export Annotations button
+                IconButton(onClick = onOpenExportSheet, modifier = Modifier.testTag("reader_export_button")) {
+                    Icon(imageVector = Icons.Default.Share, contentDescription = "Export Notes & Highlights")
                 }
             },
             colors = TopAppBarDefaults.topAppBarColors(
@@ -278,6 +329,7 @@ fun ReadingBottomBar(
     onPrevPage: () -> Unit,
     onNextPage: () -> Unit,
     onToggleReadingRuler: () -> Unit,
+    onOpenThumbnailGrid: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Surface(
@@ -402,6 +454,21 @@ fun ReadingBottomBar(
                             imageVector = Icons.Default.LineWeight,
                             contentDescription = "Reading Guide Ruler",
                             tint = if (isReadingRulerEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(4.dp))
+
+                    IconButton(
+                        onClick = onOpenThumbnailGrid,
+                        modifier = Modifier
+                            .size(36.dp)
+                            .testTag("bottom_thumbnail_grid_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.GridView,
+                            contentDescription = "Thumbnails Grid",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }

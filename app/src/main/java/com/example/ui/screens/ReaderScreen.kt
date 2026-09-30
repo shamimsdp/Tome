@@ -34,11 +34,13 @@ import com.example.ui.components.AddAnnotationDialog
 import com.example.ui.components.BookPageView
 import com.example.ui.components.ContextualSelectionToolbar
 import com.example.ui.components.EditAnnotationDialog
+import com.example.ui.components.ExportAnnotationsSheet
 import com.example.ui.components.NotesAndBookmarksSheet
 import com.example.ui.components.ReadingBottomBar
 import com.example.ui.components.ReadingSessionSheet
 import com.example.ui.components.ReadingTopBar
 import com.example.ui.components.SearchOverlay
+import com.example.ui.components.ThumbnailGridSheet
 import com.example.ui.components.VoiceReadingBottomBar
 import com.example.ui.components.VoiceReadingPlayer
 import com.example.ui.viewmodel.PdfViewModel
@@ -85,6 +87,7 @@ fun ReaderScreen(
 
     // Page flip animation state
     val isPageFlipEnabled by viewModel.isPageFlipEnabled.collectAsState()
+    val isNaturalFlipDirection by viewModel.isNaturalFlipDirection.collectAsState()
     val lastPageTurnDelta by viewModel.lastPageTurnDelta.collectAsState()
 
     // Search state
@@ -104,6 +107,8 @@ fun ReaderScreen(
 
     var showNotesSheet by remember { mutableStateOf(false) }
     var showAiChatSheet by remember { mutableStateOf(false) }
+    var showThumbnailGrid by remember { mutableStateOf(false) }
+    var showExportSheet by remember { mutableStateOf(false) }
     var isSearchActive by remember { mutableStateOf(false) }
 
     val snackbarHostState = remember { SnackbarHostState() }
@@ -133,6 +138,7 @@ fun ReaderScreen(
                 bitmap = currentPageBitmap,
                 pageIndex = currentPageIndex,
                 totalPages = totalPages,
+                pdfEngine = viewModel.pdfEngine,
                 readingTheme = readingTheme,
                 isBookmarked = isBookmarked,
                 annotations = annotations.filter { it.pageNumber == currentPageIndex },
@@ -141,6 +147,7 @@ fun ReaderScreen(
                 isReadingRulerEnabled = isReadingRulerEnabled,
                 readingRulerRatio = readingRulerRatio,
                 isPageFlipEnabled = isPageFlipEnabled,
+                isNaturalFlipDirection = isNaturalFlipDirection,
                 pageTurnDelta = lastPageTurnDelta,
                 onTapLeft = { viewModel.prevPage() },
                 onTapRight = { viewModel.nextPage() },
@@ -181,6 +188,7 @@ fun ReaderScreen(
                     sessionDurationText = sessionDurationText,
                     isSessionTimerRunning = isSessionTimerRunning,
                     isPageFlipEnabled = isPageFlipEnabled,
+                    isNaturalFlipDirection = isNaturalFlipDirection,
                     onBack = {
                         viewModel.closeDocument()
                         onBack()
@@ -188,8 +196,11 @@ fun ReaderScreen(
                     onToggleBookmark = { viewModel.toggleBookmark() },
                     onToggleHighlightMode = { viewModel.toggleHighlightMode() },
                     onTogglePageFlip = { viewModel.togglePageFlip() },
+                    onToggleFlipDirection = { viewModel.toggleFlipDirection() },
                     onOpenSearch = { isSearchActive = true },
                     onOpenNotesDrawer = { showNotesSheet = true },
+                    onOpenThumbnailGrid = { showThumbnailGrid = true },
+                    onOpenExportSheet = { showExportSheet = true },
                     onOpenChat = { showAiChatSheet = true },
                     onStartVoiceReading = { viewModel.toggleVoiceReading() },
                     onOpenSessionTimer = { viewModel.openReadingSessionSheet() },
@@ -266,7 +277,8 @@ fun ReaderScreen(
                     onPageChange = { page -> viewModel.goToPage(page) },
                     onPrevPage = { viewModel.prevPage() },
                     onNextPage = { viewModel.nextPage() },
-                    onToggleReadingRuler = { viewModel.toggleReadingRuler() }
+                    onToggleReadingRuler = { viewModel.toggleReadingRuler() },
+                    onOpenThumbnailGrid = { showThumbnailGrid = true }
                 )
             }
 
@@ -330,6 +342,7 @@ fun ReaderScreen(
     if (showNotesSheet) {
         NotesAndBookmarksSheet(
             bookTitle = document.title,
+            author = document.author,
             annotations = annotations,
             bookmarks = bookmarks,
             onSelectPage = { page ->
@@ -348,6 +361,31 @@ fun ReaderScreen(
                 viewModel.getExportMarkdownForCurrentDoc()
             },
             onDismiss = { showNotesSheet = false }
+        )
+    }
+
+    // Thumbnail Grid / Page Browser Sheet
+    if (showThumbnailGrid) {
+        ThumbnailGridSheet(
+            totalPages = totalPages,
+            currentPageIndex = currentPageIndex,
+            pdfEngine = viewModel.pdfEngine,
+            bookmarks = bookmarks,
+            annotations = annotations,
+            onPageSelected = { page ->
+                viewModel.goToPage(page)
+            },
+            onDismiss = { showThumbnailGrid = false }
+        )
+    }
+
+    // Export Annotations Dialog / Sheet (PDF or TXT)
+    if (showExportSheet) {
+        ExportAnnotationsSheet(
+            bookTitle = document.title,
+            author = document.author,
+            annotations = annotations,
+            onDismiss = { showExportSheet = false }
         )
     }
 
