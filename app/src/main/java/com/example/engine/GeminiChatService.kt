@@ -199,4 +199,91 @@ class GeminiChatService {
             return@withContext Result.failure(e)
         }
     }
+
+    /**
+     * Translates an excerpt (such as a detected Bangla passage) into a target language
+     * using the Gemini 3.5 Flash model.
+     */
+    suspend fun translateText(
+        text: String,
+        targetLanguage: String = "English",
+        sourceLanguageHint: String? = null
+    ): Result<String> = withContext(Dispatchers.IO) {
+        val apiKey = try {
+            BuildConfig.GEMINI_API_KEY
+        } catch (_: Exception) {
+            ""
+        }
+
+        if (apiKey.isBlank() || apiKey == "MY_GEMINI_API_KEY") {
+            return@withContext Result.failure(
+                IllegalStateException("Gemini API key is not configured. Please add your key to the Secrets panel in AI Studio.")
+            )
+        }
+
+        val modelName = "gemini-3.5-flash"
+        val endpointUrl = "https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent?key=$apiKey"
+
+        try {
+            val rootJson = JSONObject()
+
+            val systemPrompt = "You are an expert multilingual literary translator. Translate the given passage accurately into $targetLanguage while preserving literary eloquence, emotional tone, and nuance. Output ONLY the translated text without introductory phrases, notes, or quotation marks."
+            val systemInstructionObj = JSONObject().apply {
+                val partsArray = JSONArray().apply {
+                    put(JSONObject().apply { put("text", systemPrompt) })
+                }
+                put("parts", partsArray)
+            }
+            rootJson.put("systemInstruction", systemInstructionObj)
+
+            val sourceDesc = if (!sourceLanguageHint.isNullOrBlank()) " from $sourceLanguageHint" else ""
+            val userPrompt = "Translate the following passage$sourceDesc into $targetLanguage:\n\n$text"
+
+            val contentsArray = JSONArray().apply {
+                put(JSONObject().apply {
+                    put("role", "user")
+                    put("parts", JSONArray().apply {
+                        put(JSONObject().apply { put("text", userPrompt) })
+                    })
+                })
+            }
+            rootJson.put("contents", contentsArray)
+
+            val requestBody = rootJson.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
+            val request = Request.Builder()
+                .url(endpointUrl)
+                .post(requestBody)
+                .build()
+
+            val response = okHttpClient.newCall(request).execute()
+            val responseBody = response.body?.string() ?: ""
+
+            if (!response.isSuccessful) {
+                return@withContext Result.failure(
+                    Exception("Translation failed: HTTP ${response.code} - $responseBody")
+                )
+            }
+
+            val responseJson = JSONObject(responseBody)
+            val candidates = responseJson.optJSONArray("candidates")
+            val firstCandidate = candidates?.optJSONObject(0)
+            val content = firstCandidate?.optJSONObject("content")
+            val parts = content?.optJSONArray("parts")
+
+            val translatedText = if (parts != null && parts.length() > 0) {
+                val sb = StringBuilder()
+                for (i in 0 until parts.length()) {
+                    sb.append(parts.optJSONObject(i)?.optString("text") ?: "")
+                }
+                sb.toString().trim()
+            } else {
+                return@withContext Result.failure(Exception("No translation received from Gemini."))
+            }
+
+            return@withContext Result.success(translatedText)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            return@withContext Result.failure(e)
+        }
+    }
 }

@@ -28,6 +28,8 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.Bookmarks
+import androidx.compose.material.icons.filled.CollectionsBookmark
 import androidx.compose.material.icons.filled.Brush
 import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.GridView
@@ -37,6 +39,9 @@ import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -74,27 +79,27 @@ fun ReadingTopBar(
     currentTheme: ReadingTheme,
     isBookmarked: Boolean,
     isHighlightMode: Boolean,
+    bookmarkCount: Int = 0,
     sessionDurationText: String = "",
     isSessionTimerRunning: Boolean = true,
     isPageFlipEnabled: Boolean = true,
-    isNaturalFlipDirection: Boolean = true,
     onBack: () -> Unit,
     onToggleBookmark: () -> Unit,
+    onOpenBookmarksDrawer: () -> Unit = {},
     onToggleHighlightMode: () -> Unit,
     onTogglePageFlip: () -> Unit = {},
-    onToggleFlipDirection: () -> Unit = {},
     onOpenSearch: () -> Unit,
     onOpenNotesDrawer: () -> Unit,
     onOpenThumbnailGrid: () -> Unit = {},
     onOpenExportSheet: () -> Unit = {},
     onOpenChat: () -> Unit,
     onStartVoiceReading: () -> Unit,
+    onOpenVoiceSettings: (() -> Unit)? = null,
     onOpenSessionTimer: () -> Unit = {},
     onSelectTheme: (ReadingTheme) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var themeMenuExpanded by remember { mutableStateOf(false) }
-    var pageFlipMenuExpanded by remember { mutableStateOf(false) }
 
     Surface(
         modifier = modifier.fillMaxWidth(),
@@ -176,6 +181,17 @@ fun ReadingTopBar(
                     )
                 }
 
+                // Voice & TTS Engine Settings button
+                if (onOpenVoiceSettings != null) {
+                    IconButton(onClick = onOpenVoiceSettings, modifier = Modifier.testTag("reader_voice_settings_button")) {
+                        Icon(
+                            imageVector = Icons.Default.Tune,
+                            contentDescription = "Voice & Engine Settings",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+
                 // Ask AI Companion button
                 IconButton(onClick = onOpenChat, modifier = Modifier.testTag("reader_ai_chat_button")) {
                     Icon(
@@ -202,13 +218,35 @@ fun ReadingTopBar(
                     )
                 }
 
-                // Bookmark toggle
+                // Bookmark toggle for current page
                 IconButton(onClick = onToggleBookmark, modifier = Modifier.testTag("reader_bookmark_toggle")) {
                     Icon(
                         imageVector = if (isBookmarked) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
-                        contentDescription = "Bookmark Page",
+                        contentDescription = if (isBookmarked) "Remove Bookmark" else "Bookmark Page",
                         tint = if (isBookmarked) Color(0xFFE11D48) else MaterialTheme.colorScheme.onSurface
                     )
+                }
+
+                // Display 'My Bookmarks' list in side drawer
+                IconButton(onClick = onOpenBookmarksDrawer, modifier = Modifier.testTag("reader_bookmarks_drawer_button")) {
+                    BadgedBox(
+                        badge = {
+                            if (bookmarkCount > 0) {
+                                Badge(
+                                    containerColor = Color(0xFFE11D48),
+                                    contentColor = Color.White
+                                ) {
+                                    Text("$bookmarkCount", fontSize = 10.sp)
+                                }
+                            }
+                        }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CollectionsBookmark,
+                            contentDescription = "My Bookmarks Drawer",
+                            tint = if (bookmarkCount > 0) Color(0xFFE11D48) else MaterialTheme.colorScheme.onSurface
+                        )
+                    }
                 }
 
                 // Theme selector menu
@@ -251,47 +289,13 @@ fun ReadingTopBar(
                     }
                 }
 
-                // Page flip animation & gesture direction menu
-                Box {
-                    IconButton(
-                        onClick = { pageFlipMenuExpanded = true },
-                        modifier = Modifier.testTag("reader_page_flip_toggle")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.AutoStories,
-                            contentDescription = if (isPageFlipEnabled) "Page Flip Animation: ON" else "Page Flip Animation: OFF",
-                            tint = if (isPageFlipEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
-                    DropdownMenu(
-                        expanded = pageFlipMenuExpanded,
-                        onDismissRequest = { pageFlipMenuExpanded = false }
-                    ) {
-                        DropdownMenuItem(
-                            text = {
-                                Text(if (isPageFlipEnabled) "✓ 3D Page Flip: ON" else "○ 3D Page Flip: OFF")
-                            },
-                            onClick = {
-                                onTogglePageFlip()
-                                pageFlipMenuExpanded = false
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = {
-                                Text(
-                                    if (isNaturalFlipDirection)
-                                        "✓ Gesture: Swipe Right = Next Page"
-                                    else
-                                        "✓ Gesture: Swipe Left = Next Page"
-                                )
-                            },
-                            onClick = {
-                                onToggleFlipDirection()
-                                pageFlipMenuExpanded = false
-                            }
-                        )
-                    }
+                // Page flip animation toggle button
+                IconButton(onClick = onTogglePageFlip, modifier = Modifier.testTag("reader_page_flip_toggle")) {
+                    Icon(
+                        imageVector = Icons.Default.AutoStories,
+                        contentDescription = if (isPageFlipEnabled) "Page Flip Animation: ON" else "Page Flip Animation: OFF",
+                        tint = if (isPageFlipEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
 
                 // All Notes & Bookmarks drawer

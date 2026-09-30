@@ -161,6 +161,10 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             repository.initializeSamplesIfNeeded(pdfEngine)
         }
+        viewModelScope.launch {
+            delay(1500)
+            appUpdateManager.checkForUpdates(forceCheck = false)
+        }
     }
 
     fun openDocument(doc: DocumentEntity, startPage: Int = -1) {
@@ -385,7 +389,10 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
         val page = _currentPageIndex.value
         viewModelScope.launch {
             val title = "Page ${page + 1} Bookmark"
+            val wasBookmarked = _isCurrentPageBookmarked.value
             repository.toggleBookmark(doc.id, page, title)
+            _isCurrentPageBookmarked.value = !wasBookmarked
+            _statusMessage.value = if (!wasBookmarked) "Page ${page + 1} added to 'My Bookmarks'" else "Page ${page + 1} removed from 'My Bookmarks'"
             checkBookmarkStatus()
         }
     }
@@ -465,6 +472,13 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
                 )
             )
             _editingAnnotation.value = null
+            _statusMessage.value = "Annotation updated"
+        }
+    }
+
+    fun updateAnnotation(annotation: AnnotationEntity) {
+        viewModelScope.launch {
+            repository.updateAnnotation(annotation)
             _statusMessage.value = "Annotation updated"
         }
     }
@@ -595,6 +609,43 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
     // Gemini Chatbot State
     val geminiChatService = com.example.engine.GeminiChatService()
 
+    // GitHub Release App Update Manager
+    val appUpdateManager = com.example.engine.AppUpdateManager(application)
+    val latestRelease: StateFlow<com.example.engine.AppReleaseInfo?> = appUpdateManager.latestRelease
+    val updateDownloadState: StateFlow<com.example.engine.UpdateDownloadState> = appUpdateManager.downloadState
+    val isCheckingForUpdates: StateFlow<Boolean> = appUpdateManager.isChecking
+    val updateCheckStatusMessage: StateFlow<String?> = appUpdateManager.checkStatusMessage
+
+    fun checkForAppUpdates(forceCheck: Boolean = false) {
+        viewModelScope.launch {
+            appUpdateManager.checkForUpdates(forceCheck)
+        }
+    }
+
+    fun downloadAndInstallUpdate(release: com.example.engine.AppReleaseInfo) {
+        viewModelScope.launch {
+            appUpdateManager.downloadAndInstallUpdate(release)
+        }
+    }
+
+    fun dismissUpdateNotification() {
+        appUpdateManager.dismissCurrentUpdateNotification()
+    }
+
+    fun getGitHubRepo(): String = appUpdateManager.getGitHubRepo()
+
+    fun setGitHubRepo(repo: String) {
+        appUpdateManager.setGitHubRepo(repo)
+    }
+
+    fun simulateNewRelease() {
+        appUpdateManager.simulateNewRelease()
+    }
+
+    fun installDownloadedApk(apkFile: java.io.File) {
+        appUpdateManager.installApk(apkFile)
+    }
+
     // Voice Reader / Read Aloud Engine (TTS)
     val voiceReaderEngine = com.example.engine.VoiceReaderEngine(application)
     val isVoiceReadingPlaying: StateFlow<Boolean> = voiceReaderEngine.isPlaying
@@ -603,6 +654,42 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
     val voiceReadingTotalSentences: StateFlow<Int> = voiceReaderEngine.totalSentences
     val voiceReadingSpeed: StateFlow<Float> = voiceReaderEngine.playbackSpeed
     val voiceReadingVolume: StateFlow<Float> = voiceReaderEngine.playbackVolume
+    val voiceReadingPitch: StateFlow<Float> = voiceReaderEngine.playbackPitch
+    val availableVoices = voiceReaderEngine.availableVoices
+    val availableEngines = voiceReaderEngine.availableEngines
+    val selectedVoiceName = voiceReaderEngine.selectedVoiceName
+    val selectedEnginePackage = voiceReaderEngine.selectedEnginePackage
+    val selectedLanguageMode = voiceReaderEngine.selectedLanguageMode
+    val isReadingBangla = voiceReaderEngine.isReadingBangla
+    val isBanglaSupportedOnDevice = voiceReaderEngine.isBanglaSupportedOnDevice
+
+    fun setVoiceReadingPitch(pitch: Float) {
+        voiceReaderEngine.setPlaybackPitch(pitch)
+    }
+
+    fun setVoiceSelection(voiceName: String?) {
+        voiceReaderEngine.setVoiceByName(voiceName)
+    }
+
+    fun switchTtsEngine(packageName: String) {
+        voiceReaderEngine.switchTtsEngine(packageName)
+    }
+
+    fun setVoiceLanguageMode(mode: String) {
+        voiceReaderEngine.setLanguageMode(mode)
+    }
+
+    fun testVoiceReading(sampleText: String? = null, isBangla: Boolean = false) {
+        voiceReaderEngine.testVoice(sampleText, isBangla)
+    }
+
+    suspend fun translateText(
+        text: String,
+        targetLanguage: String = "English",
+        sourceLanguage: String? = null
+    ): Result<String> {
+        return geminiChatService.translateText(text, targetLanguage, sourceLanguage)
+    }
 
     // Page flip animation preference & direction
     private val readerPrefs = application.getSharedPreferences("tome_reader_prefs", android.content.Context.MODE_PRIVATE)
@@ -611,17 +698,6 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _lastPageTurnDelta = MutableStateFlow(1) // +1 for next, -1 for prev
     val lastPageTurnDelta: StateFlow<Int> = _lastPageTurnDelta.asStateFlow()
-
-    // Flip Gesture Direction preference: true = Drag Right for Next Page (user requested natural direction), false = Drag Left for Next Page
-    private val _isNaturalFlipDirection = MutableStateFlow(readerPrefs.getBoolean("pref_natural_flip_direction", true))
-    val isNaturalFlipDirection: StateFlow<Boolean> = _isNaturalFlipDirection.asStateFlow()
-
-    fun toggleFlipDirection() {
-        val newVal = !_isNaturalFlipDirection.value
-        _isNaturalFlipDirection.value = newVal
-        readerPrefs.edit().putBoolean("pref_natural_flip_direction", newVal).apply()
-        _statusMessage.value = if (newVal) "Gesture: Swipe Right for Next Page" else "Gesture: Swipe Left for Next Page"
-    }
 
     fun togglePageFlip() {
         val newVal = !_isPageFlipEnabled.value

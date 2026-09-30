@@ -35,15 +35,16 @@ class PdfRepository(
 
     suspend fun initializeSamplesIfNeeded(pdfEngine: PdfEngine) = withContext(Dispatchers.IO) {
         val existing = allDocuments.first()
-        if (existing.isEmpty()) {
-            val sampleFiles = SamplePdfGenerator.ensureSampleBooksExist(context)
-            val sampleEntities = mutableListOf<DocumentEntity>()
+        val sampleFiles = SamplePdfGenerator.ensureSampleBooksExist(context)
+        val sampleEntities = mutableListOf<DocumentEntity>()
 
-            for ((index, book) in SamplePdfGenerator.sampleBooks.withIndex()) {
+        for ((index, book) in SamplePdfGenerator.sampleBooks.withIndex()) {
+            val bookId = "sample_${book.filename.removeSuffix(".pdf")}"
+            if (existing.none { it.id == bookId }) {
                 val file = sampleFiles.getOrNull(index) ?: continue
                 val totalPages = pdfEngine.openFile(file)
                 val doc = DocumentEntity(
-                    id = "sample_${book.filename.removeSuffix(".pdf")}",
+                    id = bookId,
                     title = book.title,
                     author = book.author,
                     filePath = file.absolutePath,
@@ -60,8 +61,11 @@ class PdfRepository(
                 )
                 sampleEntities.add(doc)
             }
+        }
 
+        if (sampleEntities.isNotEmpty()) {
             documentDao.insertDocuments(sampleEntities)
+        }
 
             // Seed initial bookmark and highlight note for the first book so the user sees notes right away
             val firstDocId = sampleEntities.firstOrNull()?.id
@@ -129,7 +133,6 @@ class PdfRepository(
                 )
             )
         }
-    }
 
     suspend fun importLocalPdf(uri: Uri, pdfEngine: PdfEngine): DocumentEntity? = withContext(Dispatchers.IO) {
         try {

@@ -23,11 +23,15 @@ import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.NewReleases
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.WifiOff
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -35,17 +39,23 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -54,7 +64,9 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.BuildConfig
 import com.example.data.model.ReadingTheme
+import com.example.ui.components.AppUpdateDialog
 import com.example.ui.components.HIGHLIGHT_COLORS
 import com.example.ui.viewmodel.PdfViewModel
 import java.text.SimpleDateFormat
@@ -72,6 +84,15 @@ fun SyncSettingsScreen(
     val syncLogs by viewModel.recentSyncLogs.collectAsState()
     val currentTheme by viewModel.readingTheme.collectAsState()
     val selectedHighlightColor by viewModel.selectedHighlightColor.collectAsState()
+    val latestRelease by viewModel.latestRelease.collectAsState()
+    val downloadState by viewModel.updateDownloadState.collectAsState()
+    val isCheckingForUpdates by viewModel.isCheckingForUpdates.collectAsState()
+    val updateCheckStatusMessage by viewModel.updateCheckStatusMessage.collectAsState()
+
+    var showUpdateDialog by remember { mutableStateOf(false) }
+    var showRepoEditDialog by remember { mutableStateOf(false) }
+    var currentRepo by remember { mutableStateOf(viewModel.getGitHubRepo()) }
+    var repoInputText by remember { mutableStateOf(currentRepo) }
 
     val timeFormatter = SimpleDateFormat("h:mm a", Locale.getDefault())
 
@@ -290,6 +311,182 @@ fun SyncSettingsScreen(
                 }
             }
 
+            // GitHub Releases & Application Updates Card
+            item {
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                    ),
+                    modifier = Modifier.fillMaxWidth().testTag("app_update_settings_card")
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .clip(CircleShape)
+                                        .background(MaterialTheme.colorScheme.primaryContainer),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.SystemUpdate,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column {
+                                    Text(
+                                        text = "GitHub Release & Updates",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = "Current: v${BuildConfig.VERSION_NAME} (Build ${BuildConfig.VERSION_CODE})",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+
+                            if (isCheckingForUpdates) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(20.dp),
+                                    strokeWidth = 2.dp,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // GitHub Repository Setting row
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "GitHub Repository",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    text = currentRepo,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                            IconButton(onClick = {
+                                repoInputText = currentRepo
+                                showRepoEditDialog = true
+                            }) {
+                                Icon(
+                                    imageVector = Icons.Default.Edit,
+                                    contentDescription = "Edit GitHub repository",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+
+                        updateCheckStatusMessage?.let { msg ->
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = msg,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        latestRelease?.let { release ->
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Card(
+                                shape = RoundedCornerShape(10.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
+                                ),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(12.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "🚀 New: ${release.tagName}",
+                                            fontWeight = FontWeight.Bold,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                                        )
+                                        Text(
+                                            text = release.releaseTitle,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
+                                            maxLines = 1
+                                        )
+                                    }
+                                    Button(
+                                        onClick = { showUpdateDialog = true },
+                                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                                    ) {
+                                        Text("Update", fontSize = 12.sp)
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // Action Buttons: Check for updates & Test Simulate
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Button(
+                                onClick = { viewModel.checkForAppUpdates(forceCheck = true) },
+                                enabled = !isCheckingForUpdates,
+                                modifier = Modifier.weight(1f).testTag("check_for_updates_button")
+                            ) {
+                                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Check Updates")
+                            }
+
+                            OutlinedButton(
+                                onClick = {
+                                    viewModel.simulateNewRelease()
+                                    showUpdateDialog = true
+                                },
+                                modifier = Modifier.weight(1f).testTag("simulate_update_button")
+                            ) {
+                                Icon(Icons.Default.NewReleases, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Test Update")
+                            }
+                        }
+                    }
+                }
+            }
+
             // Sync History Logs
             item {
                 Text(
@@ -349,6 +546,65 @@ fun SyncSettingsScreen(
             item {
                 Spacer(modifier = Modifier.height(32.dp))
             }
+        }
+
+        // Detailed App Update Dialog
+        if (showUpdateDialog && latestRelease != null) {
+            AppUpdateDialog(
+                release = latestRelease!!,
+                downloadState = downloadState,
+                onDownloadAndInstall = {
+                    viewModel.downloadAndInstallUpdate(latestRelease!!)
+                },
+                onViewOnGitHub = {
+                    viewModel.appUpdateManager.launchBrowserUrl(latestRelease!!.htmlUrl)
+                },
+                onDismiss = {
+                    showUpdateDialog = false
+                }
+            )
+        }
+
+        // Edit GitHub Repository Dialog
+        if (showRepoEditDialog) {
+            AlertDialog(
+                onDismissRequest = { showRepoEditDialog = false },
+                title = { Text("Configure GitHub Repository") },
+                text = {
+                    Column {
+                        Text(
+                            text = "Enter your GitHub owner/repository (e.g. username/repo):",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = repoInputText,
+                            onValueChange = { repoInputText = it },
+                            placeholder = { Text("owner/repository") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth().testTag("repo_input_field")
+                        )
+                    }
+                },
+                confirmButton = {
+                    Button(onClick = {
+                        val cleaned = repoInputText.trim()
+                        if (cleaned.isNotBlank()) {
+                            viewModel.setGitHubRepo(cleaned)
+                            currentRepo = viewModel.getGitHubRepo()
+                        }
+                        showRepoEditDialog = false
+                    }) {
+                        Text("Save")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showRepoEditDialog = false }) {
+                        Text("Cancel")
+                    }
+                }
+            )
         }
     }
 }

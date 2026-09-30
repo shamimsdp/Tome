@@ -76,4 +76,43 @@ class ExampleRobolectricTest {
     assertEquals("Reading awakens the mind.", sentences[1])
     assertEquals("It opens new perspectives!", sentences[2])
   }
+
+  @Test
+  fun `version comparison identifies newer releases`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val manager = com.example.engine.AppUpdateManager(context)
+
+    assertTrue(manager.isVersionNewer("1.1.0", "1.0"))
+    assertTrue(manager.isVersionNewer("2.0", "1.0"))
+    assertTrue(manager.isVersionNewer("1.0.1", "1.0"))
+    org.junit.Assert.assertFalse(manager.isVersionNewer("1.0", "1.0"))
+    org.junit.Assert.assertFalse(manager.isVersionNewer("0.9", "1.0"))
+  }
+
+  @Test
+  fun `female voice presets have feminine pitch and gender`() {
+    val femalePresets = com.example.engine.VoiceReaderEngine.CURATED_PRESETS.filter { it.gender == "Female" }
+    assertTrue("Should have female presets", femalePresets.isNotEmpty())
+    femalePresets.forEach { preset ->
+      assertEquals("Female", preset.gender)
+      assertTrue("Female preset pitch should be >= 1.25f, was ${preset.presetPitch}", preset.presetPitch >= 1.25f)
+    }
+  }
+
+  @Test
+  fun `male voice presets have masculine pitch and gender`() {
+    val malePresets = com.example.engine.VoiceReaderEngine.CURATED_PRESETS.filter { it.gender == "Male" }
+    assertTrue("Should have male presets", malePresets.isNotEmpty())
+    malePresets.forEach { preset ->
+      assertEquals("Male", preset.gender)
+      assertTrue("Male preset pitch should be <= 0.90f, was ${preset.presetPitch}", preset.presetPitch <= 0.90f)
+    }
+  }
+
+  @Test
+  fun `bangla text detection correctly flags Bengali script`() {
+    assertTrue(com.example.engine.VoiceReaderEngine.isBanglaText("চিত্ত যেথা ভয়শূন্য"))
+    assertTrue(com.example.engine.VoiceReaderEngine.isBanglaText("বই মানুষের শ্রেষ্ঠ বন্ধু।"))
+    org.junit.Assert.assertFalse(com.example.engine.VoiceReaderEngine.isBanglaText("The quick brown fox jumps over the lazy dog."))
+  }
 }

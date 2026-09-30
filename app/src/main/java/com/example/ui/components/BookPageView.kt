@@ -80,7 +80,6 @@ fun BookPageView(
     isReadingRulerEnabled: Boolean,
     readingRulerRatio: Float,
     isPageFlipEnabled: Boolean = true,
-    isNaturalFlipDirection: Boolean = true,
     pageTurnDelta: Int = 1,
     onTapLeft: () -> Unit,
     onTapRight: () -> Unit,
@@ -279,15 +278,23 @@ fun BookPageView(
                             }
                         }
 
-                        // Search Matches highlight on page
+                        // Search Matches highlight on page with amber highlight & margin indicator
                         for (match in searchMatches) {
                             if (match.pageNumber == renderedPageIndex) {
                                 val top = match.verticalRatio * canvasHeight
+                                // Highlight strip
                                 drawRoundRect(
-                                    color = Color(0xFFFF9800).copy(alpha = 0.65f),
+                                    color = Color(0xFFFFB300).copy(alpha = 0.50f),
                                     topLeft = Offset(canvasWidth * 0.08f, top),
-                                    size = Size(canvasWidth * 0.84f, 28f),
-                                    cornerRadius = CornerRadius(4f, 4f)
+                                    size = Size(canvasWidth * 0.84f, 32f),
+                                    cornerRadius = CornerRadius(6f, 6f)
+                                )
+                                // Left margin amber search pin
+                                drawRoundRect(
+                                    color = Color(0xFFF59E0B),
+                                    topLeft = Offset(canvasWidth * 0.05f, top),
+                                    size = Size(6f, 32f),
+                                    cornerRadius = CornerRadius(3f, 3f)
                                 )
                             }
                         }
@@ -385,7 +392,7 @@ fun BookPageView(
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .pointerInput(isHighlightMode, isPageFlipEnabled, isNaturalFlipDirection) {
+                            .pointerInput(isHighlightMode, isPageFlipEnabled) {
                                 awaitEachGesture {
                                     val down = awaitFirstDown(requireUnconsumed = false)
                                     var totalDragX = 0f
@@ -415,22 +422,12 @@ fun BookPageView(
                                             } else {
                                                 // Handle horizontal drag / swipe
                                                 val threshold = 35f
-                                                if (totalDragX > threshold) {
-                                                    // Swiped from left to right (positive drag)
-                                                    // By default (natural book flip): swipe right = NEXT page
-                                                    if (isNaturalFlipDirection) {
-                                                        onTapRight()
-                                                    } else {
-                                                        onTapLeft()
-                                                    }
-                                                } else if (totalDragX < -threshold) {
-                                                    // Swiped from right to left (negative drag)
-                                                    // By default: swipe left = PREVIOUS page
-                                                    if (isNaturalFlipDirection) {
-                                                        onTapLeft()
-                                                    } else {
-                                                        onTapRight()
-                                                    }
+                                                if (totalDragX < -threshold) {
+                                                    // Dragged from right to left: advances the page (Next)
+                                                    onTapRight()
+                                                } else if (totalDragX > threshold) {
+                                                    // Dragged from left to right: moves to previous page (Previous)
+                                                    onTapLeft()
                                                 }
                                             }
                                             accumulatedDragX = 0f

@@ -74,6 +74,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.data.model.DocumentEntity
+import com.example.ui.components.AppUpdateBanner
+import com.example.ui.components.AppUpdateDialog
 import com.example.ui.viewmodel.PdfViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -87,9 +89,12 @@ fun LibraryScreen(
 ) {
     val documents by viewModel.libraryDocuments.collectAsState()
     val isOfflineMode by viewModel.isOfflineModeOnly.collectAsState()
+    val latestRelease by viewModel.latestRelease.collectAsState()
+    val downloadState by viewModel.updateDownloadState.collectAsState()
 
     var searchQuery by remember { mutableStateOf("") }
     var selectedCategoryIndex by remember { mutableIntStateOf(0) } // 0: All, 1: PDF, 2: Books, 3: Favorites, 4: Offline
+    var showUpdateDialog by remember { mutableStateOf(false) }
 
     val openPdfLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -149,6 +154,17 @@ fun LibraryScreen(
                     .padding(horizontal = 18.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
+                // GitHub Release Update Notification Banner
+                latestRelease?.let { release ->
+                    item {
+                        AppUpdateBanner(
+                            release = release,
+                            onOpenUpdateDetails = { showUpdateDialog = true },
+                            onDismiss = { viewModel.dismissUpdateNotification() }
+                        )
+                    }
+                }
+
                 // Header (from Image 1: "Good morning Reader 👋" + profile avatar)
                 item {
                     Spacer(modifier = Modifier.height(12.dp))
@@ -458,6 +474,22 @@ fun LibraryScreen(
                     Spacer(modifier = Modifier.height(80.dp)) // padding for FAB
                 }
             }
+        }
+
+        if (showUpdateDialog && latestRelease != null) {
+            AppUpdateDialog(
+                release = latestRelease!!,
+                downloadState = downloadState,
+                onDownloadAndInstall = {
+                    viewModel.downloadAndInstallUpdate(latestRelease!!)
+                },
+                onViewOnGitHub = {
+                    viewModel.appUpdateManager.launchBrowserUrl(latestRelease!!.htmlUrl)
+                },
+                onDismiss = {
+                    showUpdateDialog = false
+                }
+            )
         }
     }
 }
