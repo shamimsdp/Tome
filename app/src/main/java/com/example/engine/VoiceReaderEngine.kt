@@ -558,16 +558,16 @@ class VoiceReaderEngine(private val context: Context) : TextToSpeech.OnInitListe
 
     private fun findMatchingVoiceForGender(locale: Locale, targetGender: String): Voice? {
         val voices = tts?.voices ?: return null
-        // 1. Language + Gender match
+        // 1. Language + Gender exact match
         val langGenderMatch = voices.firstOrNull { v ->
             v.locale.language.equals(locale.language, ignoreCase = true) &&
                 detectVoiceGender(v) == targetGender
         }
         if (langGenderMatch != null) return langGenderMatch
 
-        // 2. Any voice in target gender
+        // 2. Language match with any gender (DO NOT cross language boundaries!)
         return voices.firstOrNull { v ->
-            detectVoiceGender(v) == targetGender
+            v.locale.language.equals(locale.language, ignoreCase = true)
         }
     }
 
@@ -679,17 +679,41 @@ class VoiceReaderEngine(private val context: Context) : TextToSpeech.OnInitListe
 
             @Deprecated("Deprecated in Java")
             override fun onError(utteranceId: String?) {
-                _isPlaying.value = false
+                handleSpeechError(utteranceId)
             }
 
             override fun onError(utteranceId: String?, errorCode: Int) {
-                _isPlaying.value = false
+                handleSpeechError(utteranceId, errorCode)
             }
         })
     }
 
+    private fun handleSpeechError(utteranceId: String?, errorCode: Int? = null) {
+        val engine = tts ?: return
+        try {
+            // Attempt auto-recovery fallback to standard system voice / US locale
+            try { engine.voice = engine.defaultVoice } catch (_: Exception) {}
+            engine.language = Locale.US
+            val index = _currentSentenceIndex.value
+            val text = sentences.getOrNull(index)
+            if (text != null && _isPlaying.value) {
+                val params = Bundle().apply {
+                    putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, "fallback_$index")
+                    putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, _playbackVolume.value.coerceIn(0.0f, 1.0f))
+                }
+                engine.speak(text, TextToSpeech.QUEUE_FLUSH, params, "fallback_$index")
+                return
+            }
+        } catch (_: Exception) {}
+        _isPlaying.value = false
+    }
+
     fun loadText(rawText: String, fallbackTitle: String = "Document", pageNumber: Int = 1) {
+        val wasPlaying = _isPlaying.value
+        val wasPending = pendingPlayOnReady
         stop()
+        pendingPlayOnReady = wasPending
+
         val cleaned = rawText.replace("\r", " ").replace("\n", " ").trim()
         // Support Latin (. ! ?) and Bengali sentence end marks: Dari (।) and double dari (॥)
         val parsed = cleaned.split(Regex("(?<=[.!?।॥])\\s+"))
@@ -706,6 +730,10 @@ class VoiceReaderEngine(private val context: Context) : TextToSpeech.OnInitListe
         _totalSentences.value = sentences.size
         _currentSentenceIndex.value = 0
         _currentSentenceText.value = sentences.firstOrNull() ?: ""
+
+        if (wasPlaying && isInitialized) {
+            play()
+        }
     }
 
     fun play() {
@@ -903,10 +931,12 @@ class VoiceReaderEngine(private val context: Context) : TextToSpeech.OnInitListe
             applyVoiceConfiguration(Locale.US, false)
             return text
         } else {
-            // Auto / System Default for non-Bangla
+            // Auto / System Default for non-Bangla (ensure we NEVER force Bengali TTS on English text)
             val defLocale = Locale.getDefault()
-            val avail = try { engine.isLanguageAvailable(defLocale) } catch (_: Exception) { TextToSpeech.LANG_NOT_SUPPORTED }
-            val safeLocale = if (avail >= TextToSpeech.LANG_AVAILABLE) defLocale else Locale.US
+            val isSystemLocaleNonBangla = !defLocale.language.equals("bn", ignoreCase = true)
+            val preferredLocale = if (isSystemLocaleNonBangla) defLocale else Locale.US
+            val avail = try { engine.isLanguageAvailable(preferredLocale) } catch (_: Exception) { TextToSpeech.LANG_NOT_SUPPORTED }
+            val safeLocale = if (avail >= TextToSpeech.LANG_AVAILABLE) preferredLocale else Locale.US
             applyVoiceConfiguration(safeLocale, false)
             return text
         }
@@ -928,12 +958,12 @@ class VoiceReaderEngine(private val context: Context) : TextToSpeech.OnInitListe
 
         val params = Bundle().apply {
             putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, "sentence_$index")
-            putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, _playbackVolume.value)
-            putInt(TextToSpeech.Engine.KEY_PARAM_STREAM, android.media.AudioManager.STREAM_MUSIC)
+            putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, _playbackVolume.value.coerceIn(0.0f, 1.0f))
         }
         val result = engine.speak(processedText, TextToSpeech.QUEUE_FLUSH, params, "sentence_$index")
         if (result != TextToSpeech.SUCCESS) {
             try {
+                try { engine.voice = engine.defaultVoice } catch (_: Exception) {}
                 engine.language = Locale.US
                 engine.speak(processedText, TextToSpeech.QUEUE_FLUSH, params, "sentence_$index")
             } catch (_: Exception) {}

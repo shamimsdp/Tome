@@ -38,6 +38,7 @@ import com.example.ui.screens.ReaderScreen
 import com.example.ui.screens.SyncSettingsScreen
 import com.example.ui.theme.TomeTheme
 import com.example.ui.viewmodel.PdfViewModel
+import com.example.worker.AppUpdateCheckWorker
 
 class MainActivity : ComponentActivity() {
 
@@ -46,6 +47,13 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        // 1. Enqueue automatic daily background update check (once every 24 hours)
+        AppUpdateCheckWorker.scheduleDailyCheck(applicationContext)
+
+        // 2. Perform update check whenever application opens
+        viewModel.checkForAppUpdates(forceCheck = false)
+
         setContent {
             val currentReadingTheme by viewModel.readingTheme.collectAsState()
             val isDarkTheme = currentReadingTheme == ReadingTheme.CHARCOAL || currentReadingTheme == ReadingTheme.OLED_NIGHT

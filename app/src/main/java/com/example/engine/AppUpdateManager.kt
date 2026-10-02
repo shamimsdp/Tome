@@ -74,7 +74,7 @@ class AppUpdateManager(private val context: Context) {
         const val PREF_GITHUB_REPO = "github_repo"
         const val PREF_LAST_CHECK_TIME = "last_update_check_time"
         const val PREF_DISMISSED_TAG = "dismissed_release_tag"
-        const val DEFAULT_REPO = "shamim-bjit/tome-pdf-reader"
+        const val DEFAULT_REPO = "shamimsdp/Tome"
     }
 
     private val _latestRelease = MutableStateFlow<AppReleaseInfo?>(null)
@@ -90,7 +90,12 @@ class AppUpdateManager(private val context: Context) {
     val checkStatusMessage: StateFlow<String?> = _checkStatusMessage.asStateFlow()
 
     fun getGitHubRepo(): String {
-        return prefs.getString(PREF_GITHUB_REPO, DEFAULT_REPO) ?: DEFAULT_REPO
+        val repo = prefs.getString(PREF_GITHUB_REPO, DEFAULT_REPO) ?: DEFAULT_REPO
+        if (repo == "shamim-bjit/tome-pdf-reader" || repo.isBlank()) {
+            prefs.edit().putString(PREF_GITHUB_REPO, DEFAULT_REPO).apply()
+            return DEFAULT_REPO
+        }
+        return repo
     }
 
     fun setGitHubRepo(repo: String) {

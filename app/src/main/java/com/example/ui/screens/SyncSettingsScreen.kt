@@ -426,6 +426,12 @@ fun SyncSettingsScreen(
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.primary
                                 )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "Automated daily background check & on-app-open checks active",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                                )
                             }
                             IconButton(onClick = {
                                 repoInputText = currentRepo
