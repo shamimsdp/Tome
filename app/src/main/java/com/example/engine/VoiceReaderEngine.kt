@@ -363,14 +363,24 @@ class VoiceReaderEngine(private val context: Context) : TextToSpeech.OnInitListe
         // Initialize with default curated presets
         _availableVoices.value = CURATED_PRESETS
 
+        initTts()
+    }
+
+    fun initTts() {
+        val savedEngine = _selectedEnginePackage.value
+        try {
+            tts?.shutdown()
+        } catch (_: Exception) {}
+        isInitialized = false
+
         tts = if (!savedEngine.isNullOrBlank()) {
             try {
-                TextToSpeech(context.applicationContext, this, savedEngine)
+                TextToSpeech(context, this, savedEngine)
             } catch (_: Exception) {
-                TextToSpeech(context.applicationContext, this)
+                TextToSpeech(context, this)
             }
         } else {
-            TextToSpeech(context.applicationContext, this)
+            TextToSpeech(context, this)
         }
 
         // Immediately discover installed TTS engines
@@ -381,6 +391,15 @@ class VoiceReaderEngine(private val context: Context) : TextToSpeech.OnInitListe
         if (status == TextToSpeech.SUCCESS) {
             tts?.let { engine ->
                 isInitialized = true
+
+                try {
+                    val audioAttributes = android.media.AudioAttributes.Builder()
+                        .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                        .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH)
+                        .build()
+                    engine.setAudioAttributes(audioAttributes)
+                } catch (_: Exception) {}
+
                 engine.setSpeechRate(_playbackSpeed.value)
                 engine.setPitch(_playbackPitch.value)
                 setupUtteranceListener()
@@ -408,6 +427,17 @@ class VoiceReaderEngine(private val context: Context) : TextToSpeech.OnInitListe
                     pendingPlayOnReady = false
                     play()
                 }
+            }
+        } else {
+            isInitialized = false
+            // Auto-recovery: if specific engine failed, fall back to default
+            if (_selectedEnginePackage.value != null) {
+                _selectedEnginePackage.value = null
+                prefs.edit().remove(PREF_TTS_ENGINE_PKG).apply()
+                try {
+                    tts?.shutdown()
+                    tts = TextToSpeech(context, this)
+                } catch (_: Exception) {}
             }
         }
     }
@@ -550,10 +580,17 @@ class VoiceReaderEngine(private val context: Context) : TextToSpeech.OnInitListe
     private fun applyVoiceConfiguration(targetLocale: Locale, isBangla: Boolean) {
         val engine = tts ?: return
 
-        // 1. Set language first
+        // 1. Set language first (safely checking availability)
         try {
-            engine.language = targetLocale
-        } catch (_: Exception) {}
+            val status = engine.isLanguageAvailable(targetLocale)
+            if (status >= TextToSpeech.LANG_AVAILABLE) {
+                engine.language = targetLocale
+            } else {
+                engine.language = Locale.US
+            }
+        } catch (_: Exception) {
+            try { engine.language = Locale.US } catch (_: Exception) {}
+        }
 
         val chosenVoice = _selectedVoiceName.value
         val preset = CURATED_PRESETS.find { it.name == chosenVoice }
@@ -651,7 +688,7 @@ class VoiceReaderEngine(private val context: Context) : TextToSpeech.OnInitListe
         })
     }
 
-    fun loadText(rawText: String) {
+    fun loadText(rawText: String, fallbackTitle: String = "Document", pageNumber: Int = 1) {
         stop()
         val cleaned = rawText.replace("\r", " ").replace("\n", " ").trim()
         // Support Latin (. ! ?) and Bengali sentence end marks: Dari (।) and double dari (॥)
@@ -659,16 +696,28 @@ class VoiceReaderEngine(private val context: Context) : TextToSpeech.OnInitListe
             .map { it.trim() }
             .filter { it.isNotBlank() }
 
-        sentences = if (parsed.isNotEmpty()) parsed else if (cleaned.isNotBlank()) listOf(cleaned) else emptyList()
+        sentences = if (parsed.isNotEmpty()) {
+            parsed
+        } else if (cleaned.isNotBlank()) {
+            listOf(cleaned)
+        } else {
+            listOf("$fallbackTitle. Page $pageNumber.")
+        }
         _totalSentences.value = sentences.size
         _currentSentenceIndex.value = 0
         _currentSentenceText.value = sentences.firstOrNull() ?: ""
     }
 
     fun play() {
-        if (sentences.isEmpty()) return
-        if (!isInitialized) {
+        if (sentences.isEmpty()) {
+            sentences = listOf("Document. Page 1.")
+            _totalSentences.value = 1
+            _currentSentenceIndex.value = 0
+            _currentSentenceText.value = sentences.first()
+        }
+        if (!isInitialized || tts == null) {
             pendingPlayOnReady = true
+            initTts()
             return
         }
         _isPlaying.value = true
@@ -855,7 +904,10 @@ class VoiceReaderEngine(private val context: Context) : TextToSpeech.OnInitListe
             return text
         } else {
             // Auto / System Default for non-Bangla
-            applyVoiceConfiguration(Locale.getDefault(), false)
+            val defLocale = Locale.getDefault()
+            val avail = try { engine.isLanguageAvailable(defLocale) } catch (_: Exception) { TextToSpeech.LANG_NOT_SUPPORTED }
+            val safeLocale = if (avail >= TextToSpeech.LANG_AVAILABLE) defLocale else Locale.US
+            applyVoiceConfiguration(safeLocale, false)
             return text
         }
     }
@@ -865,14 +917,27 @@ class VoiceReaderEngine(private val context: Context) : TextToSpeech.OnInitListe
         val rawTextToSpeak = sentences.getOrNull(index) ?: return
         _currentSentenceText.value = rawTextToSpeak
 
-        val engine = tts ?: return
+        val engine = tts
+        if (engine == null || !isInitialized) {
+            pendingPlayOnReady = true
+            initTts()
+            return
+        }
+
         val processedText = prepareEngineForText(rawTextToSpeak)
 
         val params = Bundle().apply {
             putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, "sentence_$index")
             putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, _playbackVolume.value)
+            putInt(TextToSpeech.Engine.KEY_PARAM_STREAM, android.media.AudioManager.STREAM_MUSIC)
         }
-        engine.speak(processedText, TextToSpeech.QUEUE_FLUSH, params, "sentence_$index")
+        val result = engine.speak(processedText, TextToSpeech.QUEUE_FLUSH, params, "sentence_$index")
+        if (result != TextToSpeech.SUCCESS) {
+            try {
+                engine.language = Locale.US
+                engine.speak(processedText, TextToSpeech.QUEUE_FLUSH, params, "sentence_$index")
+            } catch (_: Exception) {}
+        }
     }
 
     fun shutdown() {

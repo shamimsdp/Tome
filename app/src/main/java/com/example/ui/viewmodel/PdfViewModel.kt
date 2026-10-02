@@ -348,9 +348,10 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
         _pagesReadThisSession.value = _sessionVisitedPages.size
 
         if (_isVoicePlayerVisible.value) {
-            val pageText = pdfEngine.getPageText(clamped, _activeDocument.value?.title ?: "", total)
+            val docTitle = _activeDocument.value?.title ?: "Document"
+            val pageText = pdfEngine.getPageText(clamped, docTitle, total)
             val wasPlaying = isVoiceReadingPlaying.value
-            voiceReaderEngine.loadText(pageText)
+            voiceReaderEngine.loadText(pageText, docTitle, clamped + 1)
             if (wasPlaying) {
                 voiceReaderEngine.play()
             }
@@ -741,10 +742,23 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
 
     fun startVoiceReading() {
         val doc = _activeDocument.value
-        val pageText = pdfEngine.getPageText(_currentPageIndex.value, doc?.title ?: "", _totalPages.value)
-        voiceReaderEngine.loadText(pageText)
+        val title = doc?.title ?: "Document"
+        val pageText = pdfEngine.getPageText(_currentPageIndex.value, title, _totalPages.value)
+        voiceReaderEngine.loadText(pageText, title, _currentPageIndex.value + 1)
         _isVoicePlayerVisible.value = true
         voiceReaderEngine.play()
+    }
+
+    fun openDocumentAndStartVoiceReading(doc: DocumentEntity, startPage: Int = -1) {
+        viewModelScope.launch {
+            openDocument(doc, startPage)
+            var attempts = 0
+            while (_activeDocument.value == null && attempts < 10) {
+                delay(100)
+                attempts++
+            }
+            startVoiceReading()
+        }
     }
 
     fun toggleVoiceReading() {

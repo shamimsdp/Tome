@@ -51,15 +51,15 @@ class PdfEngine {
             renderer = newRenderer
 
             // Populate text index if this is a sample book, or default textual hints
-            buildSearchIndex(file.name)
+            buildSearchIndex(file, newRenderer.pageCount)
 
             return@withContext newRenderer.pageCount
         }
     }
 
-    private fun buildSearchIndex(filename: String) {
+    private fun buildSearchIndex(file: File, pageCount: Int) {
         textIndexByPage.clear()
-        val sampleBook = SamplePdfGenerator.sampleBooks.find { it.filename == filename }
+        val sampleBook = SamplePdfGenerator.sampleBooks.find { it.filename == file.name }
         if (sampleBook != null) {
             sampleBook.pagesText.forEachIndexed { index, page ->
                 val sb = StringBuilder()
@@ -68,6 +68,17 @@ class PdfEngine {
                 page.paragraphs.forEach { sb.append(it).append("\n") }
                 if (page.quote != null) sb.append(page.quote).append("\n")
                 textIndexByPage[index] = sb.toString()
+            }
+        } else {
+            try {
+                val extracted = PdfTextExtractor.extractTextPerPage(file, pageCount)
+                extracted.forEach { (page, text) ->
+                    if (text.isNotBlank()) {
+                        textIndexByPage[page] = text
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
         }
     }

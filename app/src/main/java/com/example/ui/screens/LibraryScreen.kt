@@ -459,8 +459,7 @@ fun LibraryScreen(
                                 onOpenDocument(doc)
                             },
                             onListenVoice = {
-                                viewModel.openDocument(doc)
-                                viewModel.startVoiceReading()
+                                viewModel.openDocumentAndStartVoiceReading(doc)
                                 onOpenDocument(doc)
                             },
                             onToggleFavorite = { viewModel.toggleFavorite(doc) },
