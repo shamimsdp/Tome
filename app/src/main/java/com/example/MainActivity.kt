@@ -48,6 +48,12 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
+        // Enable hardware acceleration specifically on the window
+        window.setFlags(
+            android.view.WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
+            android.view.WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
+        )
+
         // 1. Enqueue automatic daily background update check (once every 24 hours)
         AppUpdateCheckWorker.scheduleDailyCheck(applicationContext)
 

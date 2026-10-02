@@ -359,7 +359,9 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch {
             val bitmap = pdfEngine.renderPage(clamped)
-            _currentPageBitmap.value = bitmap
+            if (bitmap != null && _currentPageIndex.value == clamped && _currentPageBitmap.value !== bitmap) {
+                _currentPageBitmap.value = bitmap
+            }
             checkBookmarkStatus()
 
             // Pre-fetch adjacent pages into cache so next page turns are instantaneous

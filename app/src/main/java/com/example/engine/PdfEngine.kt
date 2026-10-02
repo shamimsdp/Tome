@@ -25,8 +25,8 @@ class PdfEngine {
 
     private val mutex = Mutex()
 
-    // 24MB bitmap cache
-    private val maxCacheSize = (Runtime.getRuntime().maxMemory() / 1024 / 8).toInt().coerceAtLeast(16 * 1024)
+    // High-capacity bitmap cache (64MB+ or 25% of app heap) to hold 15-20 pre-rendered pages simultaneously
+    private val maxCacheSize = (Runtime.getRuntime().maxMemory() / 1024 / 4).toInt().coerceAtLeast(64 * 1024)
     private val bitmapCache = object : LruCache<String, Bitmap>(maxCacheSize) {
         override fun sizeOf(key: String, value: Bitmap): Int {
             return value.byteCount / 1024
@@ -39,6 +39,11 @@ class PdfEngine {
     fun getCachedBitmap(pageIndex: Int): Bitmap? {
         val cacheKey = "${currentFile?.absolutePath}_$pageIndex"
         return bitmapCache.get(cacheKey)
+    }
+
+    fun isPageCached(pageIndex: Int): Boolean {
+        val cacheKey = "${currentFile?.absolutePath}_$pageIndex"
+        return bitmapCache.get(cacheKey) != null
     }
 
     suspend fun openFile(file: File): Int = withContext(Dispatchers.IO) {
@@ -98,10 +103,10 @@ class PdfEngine {
                 val baseWidth = page.width
                 val baseHeight = page.height
 
-                // Render at 2x or 2.5x base resolution for razor sharp book text
-                val scale = 2.2f
-                val renderWidth = (baseWidth * scale).toInt().coerceAtLeast(800)
-                val renderHeight = (baseHeight * scale).toInt().coerceAtLeast(1100)
+                // Render at high crisp resolution (1.6x base scale, capped at 1200x1800) for sharp text without massive memory pressure
+                val scale = 1.6f
+                val renderWidth = (baseWidth * scale).toInt().coerceIn(720, 1200)
+                val renderHeight = (baseHeight * scale).toInt().coerceIn(1000, 1800)
 
                 val bitmap = Bitmap.createBitmap(renderWidth, renderHeight, Bitmap.Config.ARGB_8888)
                 // Initialize background to white to prevent transparent artifacting
