@@ -61,6 +61,15 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
     val isSyncing: StateFlow<Boolean> = cloudSyncRepository.isSyncing
     val lastSyncTimestamp: StateFlow<Long> = cloudSyncRepository.lastSyncTimestamp
     val cloudFiles: StateFlow<List<CloudFile>> = cloudSyncRepository.cloudFiles
+    val userEmail: StateFlow<String?> = cloudSyncRepository.userEmail
+
+    fun signInUser(email: String) {
+        cloudSyncRepository.signIn(email)
+    }
+
+    fun signOutUser() {
+        cloudSyncRepository.signOut()
+    }
 
     // Active Reader State
     private val _activeDocument = MutableStateFlow<DocumentEntity?>(null)

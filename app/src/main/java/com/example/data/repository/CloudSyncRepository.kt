@@ -26,6 +26,21 @@ class CloudSyncRepository(
     private val annotationDao: AnnotationDao,
     private val syncLogDao: SyncLogDao
 ) {
+    private val accountPrefs = context.getSharedPreferences("tome_account_prefs", Context.MODE_PRIVATE)
+
+    private val _userEmail = MutableStateFlow<String?>(accountPrefs.getString("user_google_email", null))
+    val userEmail: StateFlow<String?> = _userEmail.asStateFlow()
+
+    fun signIn(email: String) {
+        accountPrefs.edit().putString("user_google_email", email.trim()).apply()
+        _userEmail.value = email.trim()
+    }
+
+    fun signOut() {
+        accountPrefs.edit().remove("user_google_email").apply()
+        _userEmail.value = null
+    }
+
     private val _isOfflineModeOnly = MutableStateFlow(false)
     val isOfflineModeOnly: StateFlow<Boolean> = _isOfflineModeOnly.asStateFlow()
 

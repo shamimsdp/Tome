@@ -88,9 +88,12 @@ fun SyncSettingsScreen(
     val downloadState by viewModel.updateDownloadState.collectAsState()
     val isCheckingForUpdates by viewModel.isCheckingForUpdates.collectAsState()
     val updateCheckStatusMessage by viewModel.updateCheckStatusMessage.collectAsState()
+    val userEmail by viewModel.userEmail.collectAsState()
 
     var showUpdateDialog by remember { mutableStateOf(false) }
     var showRepoEditDialog by remember { mutableStateOf(false) }
+    var showSignInDialog by remember { mutableStateOf(false) }
+    var signInEmailInput by remember { mutableStateOf("") }
     var currentRepo by remember { mutableStateOf(viewModel.getGitHubRepo()) }
     var repoInputText by remember { mutableStateOf(currentRepo) }
 
@@ -137,26 +140,53 @@ fun SyncSettingsScreen(
                     Column(modifier = Modifier.padding(16.dp)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.AccountCircle,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(44.dp)
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Column {
-                                Text(
-                                    text = "Google Account",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.AccountCircle,
+                                    contentDescription = null,
+                                    tint = if (userEmail != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(44.dp)
                                 )
-                                Text(
-                                    text = "shamim.bjit@gmail.com",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column {
+                                    Text(
+                                        text = if (userEmail != null) "Google Account" else "Not Signed In",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = userEmail ?: "Guest mode • Local device only",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+
+                            if (userEmail != null) {
+                                OutlinedButton(
+                                    onClick = { viewModel.signOutUser() },
+                                    modifier = Modifier.testTag("sign_out_button"),
+                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                ) {
+                                    Text("Sign Out", fontSize = 12.sp)
+                                }
+                            } else {
+                                Button(
+                                    onClick = {
+                                        signInEmailInput = ""
+                                        showSignInDialog = true
+                                    },
+                                    modifier = Modifier.testTag("sign_in_button"),
+                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                                ) {
+                                    Text("Sign In", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                }
                             }
                         }
 
@@ -167,21 +197,31 @@ fun SyncSettingsScreen(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Column {
+                            Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
                                 Text(
                                     text = "Cross-Device Sync",
                                     style = MaterialTheme.typography.labelLarge,
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
-                                    text = if (isOfflineMode) "Offline Mode • Changes cached locally" else "Last synced at ${timeFormatter.format(Date(lastSync))}",
+                                    text = when {
+                                        userEmail == null -> "Sign in to enable cloud synchronization"
+                                        isOfflineMode -> "Offline Mode • Changes cached locally"
+                                        else -> "Last synced at ${timeFormatter.format(Date(lastSync))}"
+                                    },
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
 
                             Button(
-                                onClick = { viewModel.syncNow() },
+                                onClick = {
+                                    if (userEmail == null) {
+                                        showSignInDialog = true
+                                    } else {
+                                        viewModel.syncNow()
+                                    }
+                                },
                                 enabled = !isSyncing && !isOfflineMode,
                                 modifier = Modifier.testTag("sync_now_button")
                             ) {
@@ -419,9 +459,9 @@ fun SyncSettingsScreen(
                         latestRelease?.let { release ->
                             Spacer(modifier = Modifier.height(10.dp))
                             Card(
-                                shape = RoundedCornerShape(10.dp),
+                                shape = RoundedCornerShape(12.dp),
                                 colors = CardDefaults.cardColors(
-                                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
+                                    containerColor = MaterialTheme.colorScheme.primaryContainer
                                 ),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
@@ -430,25 +470,37 @@ fun SyncSettingsScreen(
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = "🚀 New: ${release.tagName}",
-                                            fontWeight = FontWeight.Bold,
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.weight(1f).padding(end = 8.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.NewReleases,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(24.dp)
                                         )
-                                        Text(
-                                            text = release.releaseTitle,
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
-                                            maxLines = 1
-                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Column {
+                                            Text(
+                                                text = "New: ${release.tagName}",
+                                                fontWeight = FontWeight.Bold,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                                            )
+                                            Text(
+                                                text = release.releaseTitle,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f),
+                                                maxLines = 1
+                                            )
+                                        }
                                     }
                                     Button(
                                         onClick = { showUpdateDialog = true },
-                                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 6.dp)
                                     ) {
-                                        Text("Update", fontSize = 12.sp)
+                                        Text("Update", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                     }
                                 }
                             }
@@ -601,6 +653,68 @@ fun SyncSettingsScreen(
                 },
                 dismissButton = {
                     TextButton(onClick = { showRepoEditDialog = false }) {
+                        Text("Cancel")
+                    }
+                }
+            )
+        }
+
+        // Sign In Dialog
+        if (showSignInDialog) {
+            AlertDialog(
+                onDismissRequest = { showSignInDialog = false },
+                icon = {
+                    Icon(
+                        imageVector = Icons.Default.AccountCircle,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(36.dp)
+                    )
+                },
+                title = {
+                    Text(
+                        text = "Sign In with Google",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                },
+                text = {
+                    Column {
+                        Text(
+                            text = "Connect your Google account to sync reading progress, bookmarks, annotations, and cloud documents across devices.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(14.dp))
+                        OutlinedTextField(
+                            value = signInEmailInput,
+                            onValueChange = { signInEmailInput = it },
+                            placeholder = { Text("e.g. reader@gmail.com") },
+                            label = { Text("Email Address") },
+                            singleLine = true,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("sign_in_email_field")
+                        )
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            val email = signInEmailInput.trim()
+                            if (email.isNotBlank()) {
+                                viewModel.signInUser(email)
+                                showSignInDialog = false
+                            }
+                        },
+                        enabled = signInEmailInput.isNotBlank(),
+                        modifier = Modifier.testTag("confirm_sign_in_button")
+                    ) {
+                        Text("Sign In")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showSignInDialog = false }) {
                         Text("Cancel")
                     }
                 }

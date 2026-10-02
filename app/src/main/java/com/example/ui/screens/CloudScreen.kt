@@ -65,6 +65,7 @@ fun CloudScreen(
     val cloudFiles by viewModel.cloudFiles.collectAsState()
     val isOfflineMode by viewModel.isOfflineModeOnly.collectAsState()
     val isSyncing by viewModel.isSyncing.collectAsState()
+    val userEmail by viewModel.userEmail.collectAsState()
 
     Scaffold(
         topBar = {
@@ -198,11 +199,11 @@ fun CloudScreen(
                             }
                             Surface(
                                 shape = RoundedCornerShape(8.dp),
-                                color = Color(0xFF10B981).copy(alpha = 0.15f)
+                                color = if (userEmail != null) Color(0xFF10B981).copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant
                             ) {
                                 Text(
-                                    text = "Sync Active",
-                                    color = Color(0xFF10B981),
+                                    text = if (userEmail != null) "Sync Active" else "Guest Mode",
+                                    color = if (userEmail != null) Color(0xFF10B981) else MaterialTheme.colorScheme.onSurfaceVariant,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
                                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
@@ -211,7 +212,11 @@ fun CloudScreen(
                         }
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "• Google Drive (shamim.bjit@gmail.com)\n• Tome Cloud Notes Sync",
+                            text = if (userEmail != null) {
+                                "• Google Drive ($userEmail)\n• Tome Cloud Notes Sync"
+                            } else {
+                                "• Local Device Storage (No account linked)\n• Sign in from Settings to link Google Drive & enable sync"
+                            },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             lineHeight = 18.sp
