@@ -83,10 +83,12 @@ fun ReadingTopBar(
     sessionDurationText: String = "",
     isSessionTimerRunning: Boolean = true,
     isPageFlipEnabled: Boolean = true,
+    isEditElementsMode: Boolean = false,
     onBack: () -> Unit,
     onToggleBookmark: () -> Unit,
     onOpenBookmarksDrawer: () -> Unit = {},
     onToggleHighlightMode: () -> Unit,
+    onToggleEditElementsMode: () -> Unit = {},
     onTogglePageFlip: () -> Unit = {},
     onOpenSearch: () -> Unit,
     onOpenNotesDrawer: () -> Unit,
@@ -215,6 +217,18 @@ fun ReadingTopBar(
                         imageVector = Icons.Default.Brush,
                         contentDescription = "Toggle Highlighter",
                         tint = if (isHighlightMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                    )
+                }
+
+                // Edit & Add Elements toggle (Text, Images, Stamps)
+                IconButton(
+                    onClick = onToggleEditElementsMode,
+                    modifier = Modifier.testTag("reader_edit_elements_toggle")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.EditNote,
+                        contentDescription = "Edit & Add Elements",
+                        tint = if (isEditElementsMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
                     )
                 }
 

@@ -10,6 +10,7 @@ import com.example.data.model.AnnotationEntity
 import com.example.data.model.BookmarkEntity
 import com.example.data.model.CloudFile
 import com.example.data.model.DocumentEntity
+import com.example.data.model.PageElementEntity
 import com.example.data.model.ReadingTheme
 import com.example.data.model.SyncLogEntity
 import com.example.data.repository.CloudSyncRepository
@@ -35,7 +36,8 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
         documentDao = database.documentDao(),
         bookmarkDao = database.bookmarkDao(),
         annotationDao = database.annotationDao(),
-        syncLogDao = database.syncLogDao()
+        syncLogDao = database.syncLogDao(),
+        pageElementDao = database.pageElementDao()
     )
     val cloudSyncRepository = CloudSyncRepository(
         context = application,
@@ -142,6 +144,28 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
     private val _pendingHighlightTopRatio = MutableStateFlow(0.25f)
     val pendingHighlightTopRatio: StateFlow<Float> = _pendingHighlightTopRatio.asStateFlow()
 
+    // Page Elements State (Text blocks, images, stamps)
+    private val _currentElements = MutableStateFlow<List<PageElementEntity>>(emptyList())
+    val currentElements: StateFlow<List<PageElementEntity>> = _currentElements.asStateFlow()
+
+    // Dedicated Bookmarks Panel
+    private val _isBookmarksPanelOpen = MutableStateFlow(false)
+    val isBookmarksPanelOpen: StateFlow<Boolean> = _isBookmarksPanelOpen.asStateFlow()
+
+    // Text Selection & Highlighting with Custom Colors Dialog
+    private val _isTextSelectionHighlightDialogOpen = MutableStateFlow(false)
+    val isTextSelectionHighlightDialogOpen: StateFlow<Boolean> = _isTextSelectionHighlightDialogOpen.asStateFlow()
+
+    // Document Text / Element Editing Mode
+    private val _isEditElementsMode = MutableStateFlow(false)
+    val isEditElementsMode: StateFlow<Boolean> = _isEditElementsMode.asStateFlow()
+
+    private val _isAddElementDialogOpen = MutableStateFlow(false)
+    val isAddElementDialogOpen: StateFlow<Boolean> = _isAddElementDialogOpen.asStateFlow()
+
+    private val _editingElement = MutableStateFlow<PageElementEntity?>(null)
+    val editingElement: StateFlow<PageElementEntity?> = _editingElement.asStateFlow()
+
     // Status snackbar message
     private val _statusMessage = MutableStateFlow<String?>(null)
     val statusMessage: StateFlow<String?> = _statusMessage.asStateFlow()
@@ -232,6 +256,11 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
                     _currentAnnotations.value = annotations
                 }
             }
+            launch {
+                repository.getElementsForDocument(doc.id).collect { elements ->
+                    _currentElements.value = elements
+                }
+            }
         }
     }
 
@@ -240,6 +269,11 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
         sessionTimerJob?.cancel()
         sessionTimerJob = null
         _isSessionTimerRunning.value = false
+        _isBookmarksPanelOpen.value = false
+        _isEditElementsMode.value = false
+        _isAddElementDialogOpen.value = false
+        _isTextSelectionHighlightDialogOpen.value = false
+        _currentElements.value = emptyList()
 
         // Flush any remaining session reading time
         val activeDocId = _activeDocument.value?.id
@@ -404,8 +438,33 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
             val wasBookmarked = _isCurrentPageBookmarked.value
             repository.toggleBookmark(doc.id, page, title)
             _isCurrentPageBookmarked.value = !wasBookmarked
-            _statusMessage.value = if (!wasBookmarked) "Page ${page + 1} added to 'My Bookmarks'" else "Page ${page + 1} removed from 'My Bookmarks'"
+            _statusMessage.value = if (!wasBookmarked) "Page ${page + 1} added to 'Bookmarks'" else "Page ${page + 1} removed from 'Bookmarks'"
             checkBookmarkStatus()
+        }
+    }
+
+    fun openBookmarksPanel() {
+        _isBookmarksPanelOpen.value = true
+    }
+
+    fun closeBookmarksPanel() {
+        _isBookmarksPanelOpen.value = false
+    }
+
+    fun addCustomBookmark(page: Int, title: String, note: String) {
+        val doc = _activeDocument.value ?: return
+        viewModelScope.launch {
+            repository.addBookmark(doc.id, page, title, note)
+            checkBookmarkStatus()
+            _statusMessage.value = "Page ${page + 1} bookmark saved"
+        }
+    }
+
+    fun updateBookmark(bookmark: BookmarkEntity) {
+        viewModelScope.launch {
+            repository.updateBookmark(bookmark)
+            checkBookmarkStatus()
+            _statusMessage.value = "Bookmark updated"
         }
     }
 
@@ -413,6 +472,158 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             repository.deleteBookmark(id)
             checkBookmarkStatus()
+            _statusMessage.value = "Bookmark removed"
+        }
+    }
+
+    // Text Selection & Highlighting with Custom Colors
+    fun openTextSelectionHighlightDialog(initialText: String = "", topRatio: Float = 0.35f) {
+        _pendingHighlightText.value = initialText
+        _pendingHighlightTopRatio.value = topRatio
+        _isTextSelectionHighlightDialogOpen.value = true
+    }
+
+    fun closeTextSelectionHighlightDialog() {
+        _isTextSelectionHighlightDialogOpen.value = false
+    }
+
+    fun saveHighlightWithDetails(
+        text: String,
+        colorHex: String,
+        note: String,
+        tag: String,
+        topRatio: Float = _pendingHighlightTopRatio.value
+    ) {
+        val doc = _activeDocument.value ?: return
+        val page = _currentPageIndex.value
+        viewModelScope.launch {
+            repository.addAnnotation(
+                docId = doc.id,
+                page = page,
+                text = text,
+                colorHex = colorHex,
+                note = note,
+                tag = tag,
+                topRatio = topRatio
+            )
+            _selectedHighlightColor.value = colorHex
+            _isTextSelectionHighlightDialogOpen.value = false
+            _statusMessage.value = "Highlight saved in custom color"
+        }
+    }
+
+    fun getPageTextSegments(pageIndex: Int): List<String> {
+        val pageText = pdfEngine.getPageText(pageIndex)
+        if (pageText.isBlank()) return emptyList()
+        return pageText.split(Regex("[\\r\\n]+|(?<=[.!?])\\s+"))
+            .map { it.trim() }
+            .filter { it.length > 10 }
+    }
+
+    // Document Text / Element Editing Mode
+    fun toggleEditElementsMode() {
+        _isEditElementsMode.value = !_isEditElementsMode.value
+        _statusMessage.value = if (_isEditElementsMode.value) "Edit Mode Active: Drag or tap to modify elements" else "Edit Mode Disabled"
+    }
+
+    fun setEditElementsMode(enabled: Boolean) {
+        _isEditElementsMode.value = enabled
+    }
+
+    fun openAddElementDialog() {
+        _isAddElementDialogOpen.value = true
+    }
+
+    fun closeAddElementDialog() {
+        _isAddElementDialogOpen.value = false
+    }
+
+    fun addTextElement(
+        text: String,
+        colorHex: String,
+        bgHex: String,
+        fontSize: Int,
+        isBold: Boolean,
+        isItalic: Boolean
+    ) {
+        val doc = _activeDocument.value ?: return
+        val page = _currentPageIndex.value
+        val element = PageElementEntity(
+            documentId = doc.id,
+            pageNumber = page,
+            elementType = "TEXT",
+            content = text,
+            xRatio = 0.25f,
+            yRatio = 0.35f,
+            colorHex = colorHex,
+            backgroundColorHex = bgHex,
+            fontSize = fontSize,
+            isBold = isBold,
+            isItalic = isItalic
+        )
+        viewModelScope.launch {
+            repository.addPageElement(element)
+            _isEditElementsMode.value = true
+            _statusMessage.value = "Text element added. Drag to reposition!"
+        }
+    }
+
+    fun addImageElement(uriString: String) {
+        val doc = _activeDocument.value ?: return
+        val page = _currentPageIndex.value
+        val element = PageElementEntity(
+            documentId = doc.id,
+            pageNumber = page,
+            elementType = "IMAGE",
+            content = uriString,
+            xRatio = 0.35f,
+            yRatio = 0.35f,
+            widthRatio = 0.35f,
+            heightRatio = 0.2f
+        )
+        viewModelScope.launch {
+            repository.addPageElement(element)
+            _isEditElementsMode.value = true
+            _statusMessage.value = "Image added to page. Drag to reposition!"
+        }
+    }
+
+    fun addStampElement(stampTitle: String, colorHex: String) {
+        val doc = _activeDocument.value ?: return
+        val page = _currentPageIndex.value
+        val element = PageElementEntity(
+            documentId = doc.id,
+            pageNumber = page,
+            elementType = "STAMP",
+            content = stampTitle,
+            colorHex = colorHex,
+            xRatio = 0.4f,
+            yRatio = 0.2f
+        )
+        viewModelScope.launch {
+            repository.addPageElement(element)
+            _isEditElementsMode.value = true
+            _statusMessage.value = "Stamp placed on page"
+        }
+    }
+
+    fun updateElementPosition(element: PageElementEntity, newXRatio: Float, newYRatio: Float) {
+        viewModelScope.launch {
+            repository.updatePageElement(element.copy(xRatio = newXRatio, yRatio = newYRatio))
+        }
+    }
+
+    fun updatePageElement(element: PageElementEntity) {
+        viewModelScope.launch {
+            repository.updatePageElement(element)
+            _statusMessage.value = "Element updated"
+        }
+    }
+
+    fun deletePageElement(id: String) {
+        viewModelScope.launch {
+            repository.deletePageElement(id)
+            _statusMessage.value = "Element deleted"
         }
     }
 

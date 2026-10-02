@@ -32,9 +32,13 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.example.data.model.DocumentEntity
 import com.example.ui.components.AddAnnotationDialog
+import com.example.ui.components.AddElementDialog
 import com.example.ui.components.BookPageView
+import com.example.ui.components.BookmarksPanel
 import com.example.ui.components.ContextualSelectionToolbar
+import com.example.ui.components.CustomColorPickerDialog
 import com.example.ui.components.EditAnnotationDialog
+import com.example.ui.components.EditModeFloatingBar
 import com.example.ui.components.ExportAnnotationsSheet
 import com.example.ui.components.NotesAndBookmarksSheet
 import com.example.ui.components.PersistentReaderSearchBar
@@ -42,6 +46,7 @@ import com.example.ui.components.ReadingBottomBar
 import com.example.ui.components.ReadingSessionSheet
 import com.example.ui.components.ReadingTopBar
 import com.example.ui.components.SearchOverlay
+import com.example.ui.components.TextSelectionHighlightDialog
 import com.example.ui.components.ThumbnailGridSheet
 import com.example.ui.components.VoiceSettingsSheet
 import com.example.ui.components.VoiceReadingBottomBar
@@ -114,6 +119,14 @@ fun ReaderScreen(
     val pendingHighlightText by viewModel.pendingHighlightText.collectAsState()
     val editingAnnotation by viewModel.editingAnnotation.collectAsState()
 
+    // Page Elements & Editing States
+    val currentElements by viewModel.currentElements.collectAsState()
+    val isBookmarksPanelOpen by viewModel.isBookmarksPanelOpen.collectAsState()
+    val isTextSelectionHighlightDialogOpen by viewModel.isTextSelectionHighlightDialogOpen.collectAsState()
+    val isEditElementsMode by viewModel.isEditElementsMode.collectAsState()
+    val isAddElementDialogOpen by viewModel.isAddElementDialogOpen.collectAsState()
+    var showCustomColorPicker by remember { mutableStateOf(false) }
+
     var showNotesSheet by remember { mutableStateOf(false) }
     var notesDrawerInitialTab by remember { mutableIntStateOf(0) }
     var showAiChatSheet by remember { mutableStateOf(false) }
@@ -159,6 +172,8 @@ fun ReaderScreen(
                 readingRulerRatio = readingRulerRatio,
                 isPageFlipEnabled = isPageFlipEnabled,
                 pageTurnDelta = lastPageTurnDelta,
+                pageElements = currentElements,
+                isEditElementsMode = isEditElementsMode,
                 onTapLeft = { viewModel.prevPage() },
                 onTapRight = { viewModel.nextPage() },
                 onTapCenter = { viewModel.toggleControls() },
@@ -171,13 +186,22 @@ fun ReaderScreen(
                     } else {
                         "Important passage on page ${currentPageIndex + 1}"
                     }
-                    viewModel.initiateAddAnnotation(sampleSnippet, ratio)
+                    viewModel.openTextSelectionHighlightDialog(sampleSnippet, ratio)
                 },
                 onAnnotationClick = { ann ->
                     viewModel.openEditAnnotation(ann)
                 },
                 onRulerPositionChange = { newRatio ->
                     viewModel.setReadingRulerPosition(newRatio)
+                },
+                onUpdateElementPosition = { elem, newX, newY ->
+                    viewModel.updateElementPosition(elem, newX, newY)
+                },
+                onDeleteElement = { id ->
+                    viewModel.deletePageElement(id)
+                },
+                onEditElement = {
+                    viewModel.openAddElementDialog()
                 },
                 modifier = Modifier.fillMaxSize()
             )
@@ -199,16 +223,17 @@ fun ReaderScreen(
                     sessionDurationText = sessionDurationText,
                     isSessionTimerRunning = isSessionTimerRunning,
                     isPageFlipEnabled = isPageFlipEnabled,
+                    isEditElementsMode = isEditElementsMode,
                     onBack = {
                         viewModel.closeDocument()
                         onBack()
                     },
                     onToggleBookmark = { viewModel.toggleBookmark() },
                     onOpenBookmarksDrawer = {
-                        notesDrawerInitialTab = 1
-                        showNotesSheet = true
+                        viewModel.openBookmarksPanel()
                     },
                     onToggleHighlightMode = { viewModel.toggleHighlightMode() },
+                    onToggleEditElementsMode = { viewModel.toggleEditElementsMode() },
                     onTogglePageFlip = { viewModel.togglePageFlip() },
                     onOpenSearch = { isSearchActive = !isSearchActive },
                     onOpenNotesDrawer = {
@@ -239,18 +264,41 @@ fun ReaderScreen(
                     onColorSelected = { colorHex ->
                         viewModel.setSelectedHighlightColor(colorHex)
                     },
+                    onOpenCustomColorPicker = {
+                        showCustomColorPicker = true
+                    },
                     onReadAloud = {
                         viewModel.startVoiceReading()
                     },
                     onAddNote = {
-                        viewModel.initiateAddAnnotation(
-                            text = "Selected passage on page ${currentPageIndex + 1}",
+                        viewModel.openTextSelectionHighlightDialog(
+                            initialText = "Selected passage on page ${currentPageIndex + 1}",
                             topRatio = 0.5f
                         )
                     },
                     onCopyText = {
                         // handled seamlessly
+                    },
+                    onOpenEditMode = {
+                        viewModel.toggleEditElementsMode()
                     }
+                )
+            }
+
+            // Floating Edit Mode Toolbar (Add Text, Image, Stamp)
+            AnimatedVisibility(
+                visible = isEditElementsMode && !isVoicePlayerVisible,
+                enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+                exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = if (isControlsVisible) 100.dp else 24.dp)
+            ) {
+                EditModeFloatingBar(
+                    onAddText = { viewModel.openAddElementDialog() },
+                    onAddImage = { viewModel.openAddElementDialog() },
+                    onAddStamp = { viewModel.openAddElementDialog() },
+                    onDoneEditing = { viewModel.setEditElementsMode(false) }
                 )
             }
 
@@ -481,6 +529,76 @@ fun ReaderScreen(
             pagesReadThisSession = pagesReadThisSession,
             readingGoalMinutes = readingGoalMinutes,
             onDismiss = { viewModel.closeReadingSessionSheet() }
+        )
+    }
+
+    // Dedicated Bookmarks Panel (storing page index in Room database)
+    if (isBookmarksPanelOpen) {
+        BookmarksPanel(
+            documentTitle = document.title,
+            currentPageIndex = currentPageIndex,
+            totalPages = totalPages,
+            bookmarks = bookmarks,
+            isCurrentPageBookmarked = isBookmarked,
+            onSelectPage = { page ->
+                viewModel.goToPage(page)
+            },
+            onToggleBookmarkCurrentPage = {
+                viewModel.toggleBookmark()
+            },
+            onAddCustomBookmark = { page, title, note ->
+                viewModel.addCustomBookmark(page, title, note)
+            },
+            onUpdateBookmark = { bm ->
+                viewModel.updateBookmark(bm)
+            },
+            onDeleteBookmark = { id ->
+                viewModel.deleteBookmark(id)
+            },
+            onDismiss = { viewModel.closeBookmarksPanel() }
+        )
+    }
+
+    // Add Elements Dialog (Text with font/color/box, Images, Stamps)
+    if (isAddElementDialogOpen) {
+        AddElementDialog(
+            pageIndex = currentPageIndex,
+            onAddTextElement = { text, colorHex, bgHex, fontSize, isBold, isItalic ->
+                viewModel.addTextElement(text, colorHex, bgHex, fontSize, isBold, isItalic)
+            },
+            onAddImageElement = { uriString ->
+                viewModel.addImageElement(uriString)
+            },
+            onAddStampElement = { stampTitle, colorHex ->
+                viewModel.addStampElement(stampTitle, colorHex)
+            },
+            onDismiss = { viewModel.closeAddElementDialog() }
+        )
+    }
+
+    // Text Selection & Highlighting with Custom Colors Dialog
+    if (isTextSelectionHighlightDialogOpen) {
+        TextSelectionHighlightDialog(
+            pageIndex = currentPageIndex,
+            initialText = pendingHighlightText,
+            pageTextSegments = viewModel.getPageTextSegments(currentPageIndex),
+            initialColorHex = selectedHighlightColor,
+            onSaveHighlight = { text, colorHex, note, tag ->
+                viewModel.saveHighlightWithDetails(text, colorHex, note, tag)
+            },
+            onDismiss = { viewModel.closeTextSelectionHighlightDialog() }
+        )
+    }
+
+    // Custom Color Picker Dialog
+    if (showCustomColorPicker) {
+        CustomColorPickerDialog(
+            initialColorHex = selectedHighlightColor,
+            onColorSelected = { hex ->
+                viewModel.setSelectedHighlightColor(hex)
+                showCustomColorPicker = false
+            },
+            onDismiss = { showCustomColorPicker = false }
         )
     }
 }

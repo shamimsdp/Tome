@@ -7,6 +7,7 @@ import androidx.room.RoomDatabase
 import com.example.data.model.AnnotationEntity
 import com.example.data.model.BookmarkEntity
 import com.example.data.model.DocumentEntity
+import com.example.data.model.PageElementEntity
 import com.example.data.model.SyncLogEntity
 
 @Database(
@@ -14,9 +15,10 @@ import com.example.data.model.SyncLogEntity
         DocumentEntity::class,
         BookmarkEntity::class,
         AnnotationEntity::class,
-        SyncLogEntity::class
+        SyncLogEntity::class,
+        PageElementEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -24,6 +26,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun bookmarkDao(): BookmarkDao
     abstract fun annotationDao(): AnnotationDao
     abstract fun syncLogDao(): SyncLogDao
+    abstract fun pageElementDao(): PageElementDao
 
     companion object {
         @Volatile

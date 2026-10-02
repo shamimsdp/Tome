@@ -5,10 +5,12 @@ import android.net.Uri
 import com.example.data.local.AnnotationDao
 import com.example.data.local.BookmarkDao
 import com.example.data.local.DocumentDao
+import com.example.data.local.PageElementDao
 import com.example.data.local.SyncLogDao
 import com.example.data.model.AnnotationEntity
 import com.example.data.model.BookmarkEntity
 import com.example.data.model.DocumentEntity
+import com.example.data.model.PageElementEntity
 import com.example.data.model.SyncLogEntity
 import com.example.engine.PdfEngine
 import com.example.engine.SamplePdfGenerator
@@ -25,7 +27,8 @@ class PdfRepository(
     private val documentDao: DocumentDao,
     private val bookmarkDao: BookmarkDao,
     private val annotationDao: AnnotationDao,
-    private val syncLogDao: SyncLogDao
+    private val syncLogDao: SyncLogDao,
+    private val pageElementDao: PageElementDao
 ) {
     val allDocuments: Flow<List<DocumentEntity>> = documentDao.getAllDocuments()
     val offlineDocuments: Flow<List<DocumentEntity>> = documentDao.getOfflineDocuments()
@@ -314,5 +317,39 @@ class PdfRepository(
             }
         }
         return sb.toString()
+    }
+
+    // Page Elements (Text editing, image/stamp elements)
+    fun getElementsForDocument(docId: String): Flow<List<PageElementEntity>> =
+        pageElementDao.getElementsForDocument(docId)
+
+    fun getElementsForPage(docId: String, page: Int): Flow<List<PageElementEntity>> =
+        pageElementDao.getElementsForPage(docId, page)
+
+    suspend fun addPageElement(element: PageElementEntity) {
+        pageElementDao.insertElement(element)
+    }
+
+    suspend fun updatePageElement(element: PageElementEntity) {
+        pageElementDao.updateElement(element)
+    }
+
+    suspend fun deletePageElement(id: String) {
+        pageElementDao.deleteElementById(id)
+    }
+
+    suspend fun addBookmark(docId: String, page: Int, title: String, note: String = "") {
+        bookmarkDao.insertBookmark(
+            BookmarkEntity(
+                documentId = docId,
+                pageNumber = page,
+                title = title.ifBlank { "Page ${page + 1} Bookmark" },
+                note = note
+            )
+        )
+    }
+
+    suspend fun updateBookmark(bookmark: BookmarkEntity) {
+        bookmarkDao.updateBookmark(bookmark)
     }
 }

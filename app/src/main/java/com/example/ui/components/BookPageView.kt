@@ -63,6 +63,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.AnnotationEntity
+import com.example.data.model.PageElementEntity
 import com.example.data.model.ReadingTheme
 import com.example.engine.PdfEngine
 import com.example.engine.SearchMatch
@@ -97,12 +98,17 @@ fun BookPageView(
     readingRulerRatio: Float,
     isPageFlipEnabled: Boolean = true,
     pageTurnDelta: Int = 1,
+    pageElements: List<PageElementEntity> = emptyList(),
+    isEditElementsMode: Boolean = false,
     onTapLeft: () -> Unit,
     onTapRight: () -> Unit,
     onTapCenter: () -> Unit,
     onAddHighlightAtRatio: (Float) -> Unit,
     onAnnotationClick: (AnnotationEntity) -> Unit,
     onRulerPositionChange: (Float) -> Unit,
+    onUpdateElementPosition: ((PageElementEntity, Float, Float) -> Unit)? = null,
+    onDeleteElement: ((String) -> Unit)? = null,
+    onEditElement: ((PageElementEntity) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val coroutineScope = rememberCoroutineScope()
@@ -195,8 +201,13 @@ fun BookPageView(
                 containerHeight = containerHeight,
                 isReadingRulerEnabled = isReadingRulerEnabled && !isFlipping,
                 readingRulerRatio = readingRulerRatio,
+                pageElements = pageElements,
+                isEditElementsMode = isEditElementsMode && !isFlipping,
                 onAnnotationClick = onAnnotationClick,
                 onRulerPositionChange = onRulerPositionChange,
+                onUpdateElementPosition = onUpdateElementPosition,
+                onDeleteElement = onDeleteElement,
+                onEditElement = onEditElement,
                 modifier = Modifier
                     .fillMaxSize()
                     .graphicsLayer {
@@ -266,6 +277,8 @@ fun BookPageView(
                             annotations = annotations,
                             searchMatches = searchMatches,
                             containerHeight = containerHeight,
+                            pageElements = pageElements,
+                            isEditElementsMode = false,
                             modifier = Modifier.fillMaxSize()
                         )
 
@@ -322,8 +335,9 @@ fun BookPageView(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .pointerInput(pageIndex, isHighlightMode, isPageFlipEnabled, totalPages) {
+                    .pointerInput(pageIndex, isHighlightMode, isEditElementsMode, isPageFlipEnabled, totalPages) {
                         awaitEachGesture {
+                            if (isEditElementsMode) return@awaitEachGesture
                             val down = awaitFirstDown(requireUnconsumed = false)
                             var totalDragX = 0f
                             var isDrag = false
@@ -500,8 +514,13 @@ private fun SinglePageSheet(
     containerHeight: Dp,
     isReadingRulerEnabled: Boolean = false,
     readingRulerRatio: Float = 0.3f,
+    pageElements: List<PageElementEntity> = emptyList(),
+    isEditElementsMode: Boolean = false,
     onAnnotationClick: ((AnnotationEntity) -> Unit)? = null,
     onRulerPositionChange: ((Float) -> Unit)? = null,
+    onUpdateElementPosition: ((PageElementEntity, Float, Float) -> Unit)? = null,
+    onDeleteElement: ((String) -> Unit)? = null,
+    onEditElement: ((PageElementEntity) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val imageBitmap = remember(renderedBitmap) {
@@ -735,6 +754,22 @@ private fun SinglePageSheet(
                         .testTag("reading_ruler_overlay")
                 )
             }
+
+            // User-added Page Elements (Text, Images, Stamps)
+            PageElementsOverlay(
+                elements = pageElements,
+                pageIndex = pageIndex,
+                isEditMode = isEditElementsMode,
+                onUpdateElementPosition = { elem, newX, newY ->
+                    onUpdateElementPosition?.invoke(elem, newX, newY)
+                },
+                onDeleteElement = { id ->
+                    onDeleteElement?.invoke(id)
+                },
+                onEditElement = { elem ->
+                    onEditElement?.invoke(elem)
+                }
+            )
         }
     }
 }
