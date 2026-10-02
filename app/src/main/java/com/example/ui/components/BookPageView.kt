@@ -1,17 +1,14 @@
 package com.example.ui.components
 
 import android.graphics.Bitmap
-import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.EnterTransition
-import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -38,10 +35,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -54,18 +53,34 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.AnnotationEntity
 import com.example.data.model.ReadingTheme
 import com.example.engine.PdfEngine
 import com.example.engine.SearchMatch
+import kotlinx.coroutines.launch
+import kotlin.math.PI
+import kotlin.math.abs
+import kotlin.math.sin
 
+enum class FlipDirection {
+    NEXT,
+    PREV
+}
+
+/**
+ * Authentic 3D Book Page View with real-time interactive page flipping.
+ * As the user drags, the page physically lifts and rotates around the left spine in 3D perspective
+ * with dynamic curling highlights, realistic drop shadows, and verso page backing.
+ */
 @Composable
 fun BookPageView(
     bitmap: Bitmap?,
@@ -89,7 +104,61 @@ fun BookPageView(
     onRulerPositionChange: (Float) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var accumulatedDragX by remember { mutableFloatStateOf(0f) }
+    val coroutineScope = rememberCoroutineScope()
+    val flipProgress = remember { Animatable(0f) }
+    var isFlipping by remember { mutableStateOf(false) }
+    var flipDirection by remember { mutableStateOf(FlipDirection.NEXT) }
+
+    // When external pageIndex changes, ensure flipping state resets cleanly
+    LaunchedEffect(pageIndex) {
+        if (!isFlipping) {
+            flipProgress.snapTo(0f)
+        }
+    }
+
+    // Resolve current page bitmap
+    val currentBitmap by produceState(
+        initialValue = pdfEngine.getCachedBitmap(pageIndex) ?: bitmap,
+        key1 = pageIndex,
+        key2 = bitmap
+    ) {
+        val cached = pdfEngine.getCachedBitmap(pageIndex)
+        value = if (cached != null) {
+            cached
+        } else if (bitmap != null) {
+            bitmap
+        } else {
+            pdfEngine.renderPage(pageIndex)
+        }
+    }
+
+    // Resolve adjacent next page bitmap for flipping forward
+    val nextBitmap by produceState<Bitmap?>(
+        initialValue = if (pageIndex + 1 < totalPages) pdfEngine.getCachedBitmap(pageIndex + 1) else null,
+        key1 = pageIndex,
+        key2 = isFlipping
+    ) {
+        if (pageIndex + 1 < totalPages) {
+            val cached = pdfEngine.getCachedBitmap(pageIndex + 1)
+            value = cached ?: pdfEngine.renderPage(pageIndex + 1)
+        } else {
+            value = null
+        }
+    }
+
+    // Resolve adjacent previous page bitmap for flipping backward
+    val prevBitmap by produceState<Bitmap?>(
+        initialValue = if (pageIndex - 1 >= 0) pdfEngine.getCachedBitmap(pageIndex - 1) else null,
+        key1 = pageIndex,
+        key2 = isFlipping
+    ) {
+        if (pageIndex - 1 >= 0) {
+            val cached = pdfEngine.getCachedBitmap(pageIndex - 1)
+            value = cached ?: pdfEngine.renderPage(pageIndex - 1)
+        } else {
+            value = null
+        }
+    }
 
     BoxWithConstraints(
         modifier = modifier
@@ -102,351 +171,696 @@ fun BookPageView(
         val containerWidth = maxWidth
         val containerHeight = maxHeight
 
-        // Animated Page Content with True 3D Book Page Flip Transition
-        AnimatedContent(
-            targetState = pageIndex,
-            transitionSpec = {
-                if (!isPageFlipEnabled) {
-                    EnterTransition.None togetherWith ExitTransition.None
-                } else {
-                    val isForward = targetState > initialState
-                    if (isForward) {
-                        (slideInHorizontally(
-                            initialOffsetX = { fullWidth -> fullWidth },
-                            animationSpec = tween(durationMillis = 360, easing = FastOutSlowInEasing)
-                        ) + fadeIn(animationSpec = tween(260))).togetherWith(
-                            slideOutHorizontally(
-                                targetOffsetX = { fullWidth -> -fullWidth / 2 },
-                                animationSpec = tween(durationMillis = 360, easing = FastOutSlowInEasing)
-                            ) + fadeOut(animationSpec = tween(220))
-                        )
-                    } else {
-                        (slideInHorizontally(
-                            initialOffsetX = { fullWidth -> -fullWidth },
-                            animationSpec = tween(durationMillis = 360, easing = FastOutSlowInEasing)
-                        ) + fadeIn(animationSpec = tween(260))).togetherWith(
-                            slideOutHorizontally(
-                                targetOffsetX = { fullWidth -> fullWidth / 2 },
-                                animationSpec = tween(durationMillis = 360, easing = FastOutSlowInEasing)
-                            ) + fadeOut(animationSpec = tween(220))
-                        )
-                    }
-                }
-            },
-            label = "book_page_flip_animation",
-            modifier = Modifier.fillMaxSize()
-        ) { renderedPageIndex ->
-            // Resolve page bitmap: if cached, grab cached immediately so both outgoing and incoming pages render simultaneously
-            val renderedBitmap by produceState(
-                initialValue = pdfEngine.getCachedBitmap(renderedPageIndex) ?: if (renderedPageIndex == pageIndex) bitmap else null,
-                key1 = renderedPageIndex,
-                key2 = bitmap
-            ) {
-                val cached = pdfEngine.getCachedBitmap(renderedPageIndex)
-                if (cached != null) {
-                    value = cached
-                } else if (renderedPageIndex == pageIndex && bitmap != null) {
-                    value = bitmap
-                } else {
-                    value = pdfEngine.renderPage(renderedPageIndex)
-                }
-            }
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .shadow(
+                    elevation = 8.dp,
+                    shape = RoundedCornerShape(4.dp),
+                    clip = false
+                )
+        ) {
+            if (!isFlipping) {
+                // Resting State: Single flat page
+                SinglePageSheet(
+                    pageIndex = pageIndex,
+                    renderedBitmap = currentBitmap,
+                    readingTheme = readingTheme,
+                    isBookmarked = isBookmarked,
+                    annotations = annotations,
+                    searchMatches = searchMatches,
+                    containerHeight = containerHeight,
+                    isReadingRulerEnabled = isReadingRulerEnabled,
+                    readingRulerRatio = readingRulerRatio,
+                    onAnnotationClick = onAnnotationClick,
+                    onRulerPositionChange = onRulerPositionChange,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                // Active 3D Page Flip State
+                val progress = flipProgress.value.coerceIn(0f, 1f)
 
-            // Physical book page sheet with realistic rounded edge, elevation and subtle curl rotation
-            Surface(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer {
-                        // Subtle 3D perspective tilt while dragging
-                        if (kotlin.math.abs(accumulatedDragX) > 10f) {
-                            rotationY = (accumulatedDragX / 120f).coerceIn(-12f, 12f)
-                            cameraDistance = 16f * density
+                if (flipDirection == FlipDirection.NEXT) {
+                    // Flipping Forward:
+                    // 1. Underneath Layer: Next Page (pageIndex + 1)
+                    if (pageIndex + 1 < totalPages) {
+                        Box(modifier = Modifier.fillMaxSize()) {
+                            SinglePageSheet(
+                                pageIndex = pageIndex + 1,
+                                renderedBitmap = nextBitmap,
+                                readingTheme = readingTheme,
+                                isBookmarked = false,
+                                annotations = emptyList(),
+                                searchMatches = emptyList(),
+                                containerHeight = containerHeight,
+                                modifier = Modifier.fillMaxSize()
+                            )
+
+                            // Dynamic drop shadow cast onto revealed page by the turning sheet
+                            val shadowAlpha = sin(progress * PI.toFloat()) * 0.42f
+                            val shadowWidth = (containerWidth.value * (1f - progress) * 0.45f).dp.coerceAtLeast(8.dp)
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxHeight()
+                                    .width(shadowWidth)
+                                    .align(Alignment.CenterStart)
+                                    .background(
+                                        Brush.horizontalGradient(
+                                            colors = listOf(
+                                                Color.Black.copy(alpha = shadowAlpha),
+                                                Color.Black.copy(alpha = shadowAlpha * 0.4f),
+                                                Color.Transparent
+                                            )
+                                        )
+                                    )
+                            )
                         }
-                    }
-                    .shadow(
-                        elevation = 6.dp,
-                        shape = RoundedCornerShape(4.dp),
-                        clip = false
-                    ),
-                shape = RoundedCornerShape(4.dp),
-                color = readingTheme.paperColor
-            ) {
-                Box(modifier = Modifier.fillMaxSize()) {
-                    if (renderedBitmap != null) {
-                        // Bitmap Page Rendering with Reading Theme Color Tint
-                        Image(
-                            bitmap = renderedBitmap!!.asImageBitmap(),
-                            contentDescription = "PDF Page ${renderedPageIndex + 1}",
+                    } else {
+                        // Last page bounce-back background
+                        Box(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .drawWithContent {
-                                    drawContent()
-
-                                    // Theme overlay tint (for Sepia, Sage, Charcoal, OLED)
-                                    if (readingTheme != ReadingTheme.DAY) {
-                                        val blendColor = when (readingTheme) {
-                                            ReadingTheme.SEPIA -> Color(0x28D4A373)
-                                            ReadingTheme.SAGE -> Color(0x2052796F)
-                                            ReadingTheme.CHARCOAL -> Color(0xD01E222A)
-                                            ReadingTheme.OLED_NIGHT -> Color(0xE8000000)
-                                            else -> Color.Transparent
-                                        }
-                                        drawRect(blendColor)
-                                    }
-                                }
-                        )
-                    } else {
-                        Box(
-                            modifier = Modifier.fillMaxSize(),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            CircularProgressIndicator(
-                                color = readingTheme.accentColor,
-                                modifier = Modifier.size(36.dp)
-                            )
-                        }
-                    }
-
-                    // Realistic book spine shadow in the left gutter (bound book effect)
-                    Box(
-                        modifier = Modifier
-                            .fillMaxHeight()
-                            .width(26.dp)
-                            .align(Alignment.CenterStart)
-                            .background(
-                                Brush.horizontalGradient(
-                                    colors = listOf(
-                                        readingTheme.spineShadowColor.copy(alpha = 0.28f),
-                                        readingTheme.spineShadowColor.copy(alpha = 0.08f),
-                                        Color.Transparent
-                                    )
-                                )
-                            )
-                    )
-
-                    // Soft right edge page curl gradient (simulates paper stack depth)
-                    Box(
-                        modifier = Modifier
-                            .fillMaxHeight()
-                            .width(14.dp)
-                            .align(Alignment.CenterEnd)
-                            .background(
-                                Brush.horizontalGradient(
-                                    colors = listOf(
-                                        Color.Transparent,
-                                        readingTheme.spineShadowColor.copy(alpha = 0.04f),
-                                        readingTheme.spineShadowColor.copy(alpha = 0.12f)
-                                    )
-                                )
-                            )
-                    )
-
-                    // Highlighting & Annotation Overlays
-                    Canvas(modifier = Modifier.fillMaxSize()) {
-                        val canvasWidth = size.width
-                        val canvasHeight = size.height
-
-                        // Draw all annotations for this page
-                        for (ann in annotations) {
-                            if (ann.pageNumber == renderedPageIndex) {
-                                val parsedColor = try {
-                                    Color(android.graphics.Color.parseColor(ann.colorHex))
-                                } catch (_: Exception) {
-                                    Color(0xFFFFEB3B)
-                                }
-
-                                val top = ann.topRatio * canvasHeight
-                                val height = ann.heightRatio * canvasHeight
-                                val left = ann.leftRatio * canvasWidth
-                                val width = ann.widthRatio * canvasWidth
-
-                                // Draw soft marker highlighter rectangle
-                                drawRoundRect(
-                                    color = parsedColor.copy(alpha = 0.42f),
-                                    topLeft = Offset(left, top),
-                                    size = Size(width, height),
-                                    cornerRadius = CornerRadius(6f, 6f)
-                                )
-
-                                // Draw small indicator bar on margin
-                                drawRoundRect(
-                                    color = parsedColor,
-                                    topLeft = Offset(left - 8f, top),
-                                    size = Size(4f, height),
-                                    cornerRadius = CornerRadius(2f, 2f)
-                                )
-                            }
-                        }
-
-                        // Search Matches highlight on page with amber highlight & margin indicator
-                        for (match in searchMatches) {
-                            if (match.pageNumber == renderedPageIndex) {
-                                val top = match.verticalRatio * canvasHeight
-                                // Highlight strip
-                                drawRoundRect(
-                                    color = Color(0xFFFFB300).copy(alpha = 0.50f),
-                                    topLeft = Offset(canvasWidth * 0.08f, top),
-                                    size = Size(canvasWidth * 0.84f, 32f),
-                                    cornerRadius = CornerRadius(6f, 6f)
-                                )
-                                // Left margin amber search pin
-                                drawRoundRect(
-                                    color = Color(0xFFF59E0B),
-                                    topLeft = Offset(canvasWidth * 0.05f, top),
-                                    size = Size(6f, 32f),
-                                    cornerRadius = CornerRadius(3f, 3f)
-                                )
-                            }
-                        }
-                    }
-
-                    // Interactive Annotation Note Badges
-                    annotations.filter { it.pageNumber == renderedPageIndex }.forEach { annotation ->
-                        val topOffset = (containerHeight.value * annotation.topRatio).dp
-                        Box(
-                            modifier = Modifier
-                                .offset(y = topOffset)
-                                .padding(start = 12.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(
-                                    try {
-                                        Color(android.graphics.Color.parseColor(annotation.colorHex)).copy(alpha = 0.95f)
-                                    } catch (_: Exception) {
-                                        Color(0xFFFFEB3B)
-                                    }
-                                )
-                                .clickable { onAnnotationClick(annotation) }
-                                .padding(horizontal = 8.dp, vertical = 3.dp)
-                                .testTag("annotation_badge_${annotation.id}")
-                        ) {
-                            Text(
-                                text = if (annotation.note.isNotBlank()) "✎ ${annotation.tag}" else "Highlight",
-                                color = Color.Black,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-
-                    // Dog-Ear Ribbon Bookmark in top-right corner
-                    AnimatedVisibility(
-                        visible = isBookmarked && renderedPageIndex == pageIndex,
-                        enter = fadeIn(),
-                        exit = fadeOut(),
-                        modifier = Modifier.align(Alignment.TopEnd)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(46.dp)
-                                .testTag("dog_ear_bookmark"),
-                            contentAlignment = Alignment.TopEnd
-                        ) {
-                            Canvas(modifier = Modifier.fillMaxSize()) {
-                                val w = size.width
-                                val h = size.height
-
-                                val path = Path().apply {
-                                    moveTo(0f, 0f)
-                                    lineTo(w, 0f)
-                                    lineTo(w, h)
-                                    close()
-                                }
-                                drawPath(
-                                    path = path,
-                                    color = Color(0xFFE11D48) // Crimson bookmark ribbon
-                                )
-                            }
-                            Icon(
-                                imageVector = Icons.Default.Bookmark,
-                                contentDescription = "Bookmarked",
-                                tint = Color.White,
-                                modifier = Modifier
-                                    .size(22.dp)
-                                    .padding(top = 4.dp, end = 4.dp)
-                            )
-                        }
-                    }
-
-                    // Reading Ruler Guide Overlay
-                    if (isReadingRulerEnabled) {
-                        val rulerY = (containerHeight.value * readingRulerRatio).dp
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .offset(y = rulerY)
-                                .height(34.dp)
-                                .background(Color(0x303B82F6))
-                                .border(1.5.dp, Color(0xFF3B82F6).copy(alpha = 0.7f), RoundedCornerShape(2.dp))
-                                .pointerInput(Unit) {
-                                    detectDragGestures { change, dragAmount ->
-                                        change.consume()
-                                        val newRatio = (rulerY.toPx() + dragAmount.y) / size.height
-                                        onRulerPositionChange(newRatio)
-                                    }
-                                }
-                                .testTag("reading_ruler_overlay")
+                                .background(readingTheme.paperColor)
                         )
                     }
 
-                    // Touch & Swipe Gestures Overlay (Clean unified gesture handling)
+                    // 2. Top Turning Layer: Current Page rotating around left spine (0° -> -180°)
+                    val rotationY = -180f * progress
+                    val isFrontFace = rotationY >= -90f
+
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .pointerInput(isHighlightMode, isPageFlipEnabled) {
-                                awaitEachGesture {
-                                    val down = awaitFirstDown(requireUnconsumed = false)
-                                    var totalDragX = 0f
-                                    var isDrag = false
-                                    val touchSlop = viewConfiguration.touchSlop
+                            .graphicsLayer {
+                                this.rotationY = rotationY
+                                transformOrigin = TransformOrigin(0f, 0.5f)
+                                cameraDistance = 28f * density
+                            }
+                    ) {
+                        if (isFrontFace) {
+                            // Front of the turning page
+                            SinglePageSheet(
+                                pageIndex = pageIndex,
+                                renderedBitmap = currentBitmap,
+                                readingTheme = readingTheme,
+                                isBookmarked = isBookmarked,
+                                annotations = annotations,
+                                searchMatches = searchMatches,
+                                containerHeight = containerHeight,
+                                isReadingRulerEnabled = isReadingRulerEnabled,
+                                readingRulerRatio = readingRulerRatio,
+                                onAnnotationClick = onAnnotationClick,
+                                onRulerPositionChange = onRulerPositionChange,
+                                modifier = Modifier.fillMaxSize()
+                            )
 
-                                    while (true) {
-                                        val event = awaitPointerEvent()
-                                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                            // Dynamic 3D lighting curl: concave shadow + convex specular highlight
+                            val curlIntensity = sin(progress * PI.toFloat())
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(
+                                        Brush.horizontalGradient(
+                                            0.0f to Color.Transparent,
+                                            (0.35f + progress * 0.3f).coerceIn(0f, 1f) to Color.Black.copy(alpha = curlIntensity * 0.28f),
+                                            (0.55f + progress * 0.3f).coerceIn(0f, 1f) to Color.White.copy(alpha = curlIntensity * 0.32f),
+                                            1.0f to Color.Black.copy(alpha = curlIntensity * 0.18f)
+                                        )
+                                    )
+                            )
+                        } else {
+                            // Backside (Verso) of the turning page facing the reader
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .graphicsLayer {
+                                        this.rotationY = 180f // Flip inside out so verso reads properly
+                                    }
+                            ) {
+                                PageVersoSheet(
+                                    readingTheme = readingTheme,
+                                    frontBitmap = currentBitmap,
+                                    modifier = Modifier.fillMaxSize()
+                                )
 
-                                        if (!change.pressed) {
-                                            // Pointer released
-                                            if (!isDrag) {
-                                                // Handle tap
-                                                val xRatio = down.position.x / size.width
-                                                val yRatio = down.position.y / size.height
+                                val curlIntensity = sin(progress * PI.toFloat())
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(
+                                            Brush.horizontalGradient(
+                                                0.0f to Color.Black.copy(alpha = curlIntensity * 0.16f),
+                                                0.4f to Color.White.copy(alpha = curlIntensity * 0.22f),
+                                                1.0f to Color.Black.copy(alpha = curlIntensity * 0.22f)
+                                            )
+                                        )
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    // Flipping Backward:
+                    // 1. Underneath Layer: Current Page (pageIndex)
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        SinglePageSheet(
+                            pageIndex = pageIndex,
+                            renderedBitmap = currentBitmap,
+                            readingTheme = readingTheme,
+                            isBookmarked = isBookmarked,
+                            annotations = annotations,
+                            searchMatches = searchMatches,
+                            containerHeight = containerHeight,
+                            isReadingRulerEnabled = isReadingRulerEnabled,
+                            readingRulerRatio = readingRulerRatio,
+                            onAnnotationClick = onAnnotationClick,
+                            onRulerPositionChange = onRulerPositionChange,
+                            modifier = Modifier.fillMaxSize()
+                        )
 
-                                                if (isHighlightMode) {
-                                                    onAddHighlightAtRatio(yRatio)
-                                                } else {
-                                                    when {
-                                                        xRatio < 0.25f -> onTapLeft()
-                                                        xRatio > 0.75f -> onTapRight()
-                                                        else -> onTapCenter()
-                                                    }
-                                                }
-                                            } else {
-                                                // Handle horizontal drag / swipe
-                                                val threshold = 35f
-                                                if (totalDragX < -threshold) {
-                                                    // Dragged from right to left: advances the page (Next)
+                        // Drop shadow cast by the incoming page from the left
+                        val shadowAlpha = sin(progress * PI.toFloat()) * 0.42f
+                        val shadowWidth = (containerWidth.value * progress * 0.45f).dp.coerceAtLeast(8.dp)
+                        Box(
+                            modifier = Modifier
+                                .fillMaxHeight()
+                                .width(shadowWidth)
+                                .align(Alignment.CenterStart)
+                                .background(
+                                    Brush.horizontalGradient(
+                                        colors = listOf(
+                                            Color.Black.copy(alpha = shadowAlpha),
+                                            Color.Black.copy(alpha = shadowAlpha * 0.4f),
+                                            Color.Transparent
+                                        )
+                                    )
+                                )
+                        )
+                    }
+
+                    // 2. Top Turning Layer: Previous Page turning over from left to right (-180° -> 0°)
+                    val rotationY = -180f * (1f - progress)
+                    val isFrontFace = rotationY >= -90f
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer {
+                                this.rotationY = rotationY
+                                transformOrigin = TransformOrigin(0f, 0.5f)
+                                cameraDistance = 28f * density
+                            }
+                    ) {
+                        if (!isFrontFace) {
+                            // Backside (Verso) of previous page turning over from left
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .graphicsLayer {
+                                        this.rotationY = 180f
+                                    }
+                            ) {
+                                PageVersoSheet(
+                                    readingTheme = readingTheme,
+                                    frontBitmap = prevBitmap,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
+                        } else {
+                            // Front of previous page landing flat on top of the current page
+                            SinglePageSheet(
+                                pageIndex = pageIndex - 1,
+                                renderedBitmap = prevBitmap,
+                                readingTheme = readingTheme,
+                                isBookmarked = false,
+                                annotations = emptyList(),
+                                searchMatches = emptyList(),
+                                containerHeight = containerHeight,
+                                modifier = Modifier.fillMaxSize()
+                            )
+
+                            val curlIntensity = sin(progress * PI.toFloat())
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(
+                                        Brush.horizontalGradient(
+                                            0.0f to Color.Transparent,
+                                            0.45f to Color.Black.copy(alpha = curlIntensity * 0.25f),
+                                            0.75f to Color.White.copy(alpha = curlIntensity * 0.30f),
+                                            1.0f to Color.Black.copy(alpha = curlIntensity * 0.16f)
+                                        )
+                                    )
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Interactive Gestures Overlay: Touch, Drag, Swipe, Tap
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .pointerInput(pageIndex, isHighlightMode, isPageFlipEnabled, totalPages) {
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            var totalDragX = 0f
+                            var isDrag = false
+                            val touchSlop = viewConfiguration.touchSlop
+
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                val change = event.changes.firstOrNull { it.id == down.id } ?: break
+
+                                if (!change.pressed) {
+                                    // Pointer released
+                                    if (isDrag && isFlipping) {
+                                        change.consume()
+                                        val currentP = flipProgress.value
+                                        coroutineScope.launch {
+                                            if (currentP > 0.28f) {
+                                                // Complete the page flip with smooth physics animation
+                                                val remainingDuration = (260 * (1f - currentP)).toInt().coerceIn(100, 260)
+                                                flipProgress.animateTo(
+                                                    targetValue = 1f,
+                                                    animationSpec = tween(
+                                                        durationMillis = remainingDuration,
+                                                        easing = FastOutSlowInEasing
+                                                    )
+                                                )
+                                                if (flipDirection == FlipDirection.NEXT) {
                                                     onTapRight()
-                                                } else if (totalDragX > threshold) {
-                                                    // Dragged from left to right: moves to previous page (Previous)
+                                                } else {
                                                     onTapLeft()
                                                 }
+                                                flipProgress.snapTo(0f)
+                                                isFlipping = false
+                                            } else {
+                                                // Cancel flip: elastic snap back to resting position
+                                                flipProgress.animateTo(
+                                                    targetValue = 0f,
+                                                    animationSpec = spring(stiffness = Spring.StiffnessMediumLow)
+                                                )
+                                                isFlipping = false
                                             }
-                                            accumulatedDragX = 0f
-                                            break
+                                        }
+                                    } else if (!isDrag) {
+                                        // Tap gesture handling
+                                        val xRatio = down.position.x / size.width
+                                        val yRatio = down.position.y / size.height
+
+                                        if (isHighlightMode) {
+                                            onAddHighlightAtRatio(yRatio)
                                         } else {
-                                            val dragDelta = change.position.x - change.previousPosition.x
-                                            totalDragX += dragDelta
-                                            if (kotlin.math.abs(totalDragX) > touchSlop) {
-                                                isDrag = true
-                                                change.consume()
-                                                accumulatedDragX = totalDragX
+                                            when {
+                                                xRatio < 0.25f -> {
+                                                    // Left edge tap: Previous Page
+                                                    if (isPageFlipEnabled && pageIndex > 0) {
+                                                        coroutineScope.launch {
+                                                            isFlipping = true
+                                                            flipDirection = FlipDirection.PREV
+                                                            flipProgress.snapTo(0f)
+                                                            flipProgress.animateTo(
+                                                                targetValue = 1f,
+                                                                animationSpec = tween(durationMillis = 320, easing = FastOutSlowInEasing)
+                                                            )
+                                                            onTapLeft()
+                                                            flipProgress.snapTo(0f)
+                                                            isFlipping = false
+                                                        }
+                                                    } else {
+                                                        onTapLeft()
+                                                    }
+                                                }
+                                                xRatio > 0.75f -> {
+                                                    // Right edge tap: Next Page
+                                                    if (isPageFlipEnabled && pageIndex < totalPages - 1) {
+                                                        coroutineScope.launch {
+                                                            isFlipping = true
+                                                            flipDirection = FlipDirection.NEXT
+                                                            flipProgress.snapTo(0f)
+                                                            flipProgress.animateTo(
+                                                                targetValue = 1f,
+                                                                animationSpec = tween(durationMillis = 320, easing = FastOutSlowInEasing)
+                                                            )
+                                                            onTapRight()
+                                                            flipProgress.snapTo(0f)
+                                                            isFlipping = false
+                                                        }
+                                                    } else {
+                                                        onTapRight()
+                                                    }
+                                                }
+                                                else -> onTapCenter()
+                                            }
+                                        }
+                                    }
+                                    break
+                                } else {
+                                    // Pointer dragged
+                                    val dragDelta = change.position.x - change.previousPosition.x
+                                    totalDragX += dragDelta
+
+                                    if (!isDrag && abs(totalDragX) > touchSlop) {
+                                        isDrag = true
+                                        if (isPageFlipEnabled) {
+                                            if (totalDragX < 0 && pageIndex < totalPages - 1) {
+                                                isFlipping = true
+                                                flipDirection = FlipDirection.NEXT
+                                            } else if (totalDragX > 0 && pageIndex > 0) {
+                                                isFlipping = true
+                                                flipDirection = FlipDirection.PREV
+                                            }
+                                        }
+                                    }
+
+                                    if (isDrag) {
+                                        change.consume()
+                                        if (isFlipping) {
+                                            val p = if (flipDirection == FlipDirection.NEXT) {
+                                                (-totalDragX / size.width).coerceIn(0f, 1f)
+                                            } else {
+                                                (totalDragX / size.width).coerceIn(0f, 1f)
+                                            }
+                                            coroutineScope.launch {
+                                                flipProgress.snapTo(p)
                                             }
                                         }
                                     }
                                 }
                             }
+                        }
+                    }
+            )
+        }
+    }
+}
+
+/**
+ * Individual Page Surface Sheet rendering the PDF bitmap, themes, annotations, and bookmarks.
+ */
+@Composable
+private fun SinglePageSheet(
+    pageIndex: Int,
+    renderedBitmap: Bitmap?,
+    readingTheme: ReadingTheme,
+    isBookmarked: Boolean,
+    annotations: List<AnnotationEntity>,
+    searchMatches: List<SearchMatch>,
+    containerHeight: Dp,
+    isReadingRulerEnabled: Boolean = false,
+    readingRulerRatio: Float = 0.3f,
+    onAnnotationClick: ((AnnotationEntity) -> Unit)? = null,
+    onRulerPositionChange: ((Float) -> Unit)? = null,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier.fillMaxSize(),
+        shape = RoundedCornerShape(4.dp),
+        color = readingTheme.paperColor
+    ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            if (renderedBitmap != null) {
+                // Bitmap Page Rendering with Reading Theme Color Tint
+                Image(
+                    bitmap = renderedBitmap.asImageBitmap(),
+                    contentDescription = "PDF Page ${pageIndex + 1}",
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .drawWithContent {
+                            drawContent()
+
+                            // Theme overlay tint (for Sepia, Sage, Charcoal, OLED)
+                            if (readingTheme != ReadingTheme.DAY) {
+                                val blendColor = when (readingTheme) {
+                                    ReadingTheme.SEPIA -> Color(0x28D4A373)
+                                    ReadingTheme.SAGE -> Color(0x2052796F)
+                                    ReadingTheme.CHARCOAL -> Color(0xD01E222A)
+                                    ReadingTheme.OLED_NIGHT -> Color(0xE8000000)
+                                    else -> Color.Transparent
+                                }
+                                drawRect(blendColor)
+                            }
+                        }
+                )
+            } else {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(
+                        color = readingTheme.accentColor,
+                        modifier = Modifier.size(36.dp)
                     )
                 }
             }
+
+            // Realistic book spine shadow in the left gutter (bound book effect)
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .width(26.dp)
+                    .align(Alignment.CenterStart)
+                    .background(
+                        Brush.horizontalGradient(
+                            colors = listOf(
+                                readingTheme.spineShadowColor.copy(alpha = 0.32f),
+                                readingTheme.spineShadowColor.copy(alpha = 0.10f),
+                                Color.Transparent
+                            )
+                        )
+                    )
+            )
+
+            // Soft right edge page curl gradient (simulates paper stack depth)
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .width(14.dp)
+                    .align(Alignment.CenterEnd)
+                    .background(
+                        Brush.horizontalGradient(
+                            colors = listOf(
+                                Color.Transparent,
+                                readingTheme.spineShadowColor.copy(alpha = 0.05f),
+                                readingTheme.spineShadowColor.copy(alpha = 0.14f)
+                            )
+                        )
+                    )
+            )
+
+            // Highlighting & Annotation Overlays
+            if (annotations.isNotEmpty() || searchMatches.isNotEmpty()) {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val canvasWidth = size.width
+                    val canvasHeight = size.height
+
+                    // Draw all annotations for this page
+                    for (ann in annotations) {
+                        if (ann.pageNumber == pageIndex) {
+                            val parsedColor = try {
+                                Color(android.graphics.Color.parseColor(ann.colorHex))
+                            } catch (_: Exception) {
+                                Color(0xFFFFEB3B)
+                            }
+
+                            val top = ann.topRatio * canvasHeight
+                            val height = ann.heightRatio * canvasHeight
+                            val left = ann.leftRatio * canvasWidth
+                            val width = ann.widthRatio * canvasWidth
+
+                            // Draw soft marker highlighter rectangle
+                            drawRoundRect(
+                                color = parsedColor.copy(alpha = 0.42f),
+                                topLeft = Offset(left, top),
+                                size = Size(width, height),
+                                cornerRadius = CornerRadius(6f, 6f)
+                            )
+
+                            // Draw indicator bar on margin
+                            drawRoundRect(
+                                color = parsedColor,
+                                topLeft = Offset(left - 8f, top),
+                                size = Size(4f, height),
+                                cornerRadius = CornerRadius(2f, 2f)
+                            )
+                        }
+                    }
+
+                    // Search Matches highlight on page with amber highlight & margin indicator
+                    for (match in searchMatches) {
+                        if (match.pageNumber == pageIndex) {
+                            val top = match.verticalRatio * canvasHeight
+                            // Highlight strip
+                            drawRoundRect(
+                                color = Color(0xFFFFB300).copy(alpha = 0.50f),
+                                topLeft = Offset(canvasWidth * 0.08f, top),
+                                size = Size(canvasWidth * 0.84f, 32f),
+                                cornerRadius = CornerRadius(6f, 6f)
+                            )
+                            // Left margin amber search pin
+                            drawRoundRect(
+                                color = Color(0xFFF59E0B),
+                                topLeft = Offset(canvasWidth * 0.05f, top),
+                                size = Size(6f, 32f),
+                                cornerRadius = CornerRadius(3f, 3f)
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Interactive Annotation Note Badges
+            annotations.filter { it.pageNumber == pageIndex }.forEach { annotation ->
+                val topOffset = (containerHeight.value * annotation.topRatio).dp
+                Box(
+                    modifier = Modifier
+                        .offset(y = topOffset)
+                        .padding(start = 12.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(
+                            try {
+                                Color(android.graphics.Color.parseColor(annotation.colorHex)).copy(alpha = 0.95f)
+                            } catch (_: Exception) {
+                                Color(0xFFFFEB3B)
+                            }
+                        )
+                        .clickable { onAnnotationClick?.invoke(annotation) }
+                        .padding(horizontal = 8.dp, vertical = 3.dp)
+                        .testTag("annotation_badge_${annotation.id}")
+                ) {
+                    Text(
+                        text = if (annotation.note.isNotBlank()) "✎ ${annotation.tag}" else "Highlight",
+                        color = Color.Black,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            // Dog-Ear Ribbon Bookmark in top-right corner
+            AnimatedVisibility(
+                visible = isBookmarked,
+                enter = fadeIn(),
+                exit = fadeOut(),
+                modifier = Modifier.align(Alignment.TopEnd)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(46.dp)
+                        .testTag("dog_ear_bookmark"),
+                    contentAlignment = Alignment.TopEnd
+                ) {
+                    Canvas(modifier = Modifier.fillMaxSize()) {
+                        val w = size.width
+                        val h = size.height
+
+                        val path = Path().apply {
+                            moveTo(0f, 0f)
+                            lineTo(w, 0f)
+                            lineTo(w, h)
+                            close()
+                        }
+                        drawPath(
+                            path = path,
+                            color = Color(0xFFE11D48) // Crimson bookmark ribbon
+                        )
+                    }
+                    Icon(
+                        imageVector = Icons.Default.Bookmark,
+                        contentDescription = "Bookmarked",
+                        tint = Color.White,
+                        modifier = Modifier
+                            .size(22.dp)
+                            .padding(top = 4.dp, end = 4.dp)
+                    )
+                }
+            }
+
+            // Reading Ruler Guide Overlay
+            if (isReadingRulerEnabled) {
+                val rulerY = (containerHeight.value * readingRulerRatio).dp
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .offset(y = rulerY)
+                        .height(34.dp)
+                        .background(Color(0x303B82F6))
+                        .border(1.5.dp, Color(0xFF3B82F6).copy(alpha = 0.7f), RoundedCornerShape(2.dp))
+                        .pointerInput(Unit) {
+                            detectDragGestures { change, dragAmount ->
+                                change.consume()
+                                val newRatio = (rulerY.toPx() + dragAmount.y) / size.height
+                                onRulerPositionChange?.invoke(newRatio)
+                            }
+                        }
+                        .testTag("reading_ruler_overlay")
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Backside (Verso) of a turning physical paper page.
+ * Replicates realistic book paper with slight translucent text bleed-through and spine crease.
+ */
+@Composable
+private fun PageVersoSheet(
+    readingTheme: ReadingTheme,
+    frontBitmap: Bitmap?,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier.fillMaxSize(),
+        shape = RoundedCornerShape(4.dp),
+        color = readingTheme.paperColor
+    ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            // Faint mirrored bleed-through of front print
+            if (frontBitmap != null) {
+                Image(
+                    bitmap = frontBitmap.asImageBitmap(),
+                    contentDescription = null,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            scaleX = -1f
+                            alpha = 0.12f
+                        }
+                )
+            }
+
+            // Spine shadow on the right edge (as verso is on the left side of the book)
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .width(24.dp)
+                    .align(Alignment.CenterEnd)
+                    .background(
+                        Brush.horizontalGradient(
+                            colors = listOf(
+                                Color.Transparent,
+                                readingTheme.spineShadowColor.copy(alpha = 0.12f),
+                                readingTheme.spineShadowColor.copy(alpha = 0.30f)
+                            )
+                        )
+                    )
+            )
+
+            // Paper grain / subtle tone
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                Color.Black.copy(alpha = 0.04f),
+                                Color.Transparent,
+                                Color.Black.copy(alpha = 0.05f)
+                            )
+                        )
+                    )
+            )
         }
     }
 }
