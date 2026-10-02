@@ -17,11 +17,13 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.NewReleases
@@ -51,8 +53,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.example.BuildConfig
 import com.example.engine.AppReleaseInfo
 import com.example.engine.UpdateDownloadState
@@ -206,7 +211,7 @@ fun AppUpdateBanner(
 }
 
 /**
- * Detailed dialog displaying GitHub release notes and executing download & install.
+ * Detailed modal dialog displaying GitHub release notes and executing download & install.
  */
 @Composable
 fun AppUpdateDialog(
@@ -218,134 +223,187 @@ fun AppUpdateDialog(
 ) {
     val scrollState = rememberScrollState()
 
-    AlertDialog(
+    Dialog(
         onDismissRequest = {
             if (downloadState !is UpdateDownloadState.Downloading) {
                 onDismiss()
             }
         },
-        icon = {
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primaryContainer),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.SystemUpdate,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(28.dp)
-                )
-            }
-        },
-        title = {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    text = "Update Available",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.height(6.dp))
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Surface(
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                        shape = RoundedCornerShape(6.dp)
-                    ) {
-                        Text(
-                            text = "v${BuildConfig.VERSION_NAME}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                        )
-                    }
-                    Text(
-                        text = "➔",
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontSize = 12.sp
-                    )
-                    Surface(
-                        color = MaterialTheme.colorScheme.primary,
-                        shape = RoundedCornerShape(6.dp)
-                    ) {
-                        Text(
-                            text = release.tagName,
-                            color = MaterialTheme.colorScheme.onPrimary,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                        )
-                    }
-                }
-            }
-        },
-        text = {
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Card(
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 10.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp)
+                .widthIn(max = 440.dp)
+                .testTag("app_update_dialog")
+        ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 4.dp)
+                    .padding(20.dp)
             ) {
-                // Version details chip card
-                Card(
-                    shape = RoundedCornerShape(10.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                    ),
+                // 1. Header Row: Blue Circle Icon + Title + Close [X] Button
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(42.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF1E3A8A)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.NewReleases,
+                                contentDescription = "New Version Available",
+                                tint = Color.White,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(12.dp))
+
+                        Column {
+                            Text(
+                                text = "New Version Available",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            if (release.releaseTitle.isNotBlank()) {
+                                Text(
+                                    text = release.releaseTitle,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    }
+
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier
+                            .size(36.dp)
+                            .testTag("close_update_dialog_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Close modal",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // 2. Version Upgrade Card (clean, unconstrained, full width)
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                    shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Column(modifier = Modifier.padding(10.dp)) {
-                        Text(
-                            text = release.releaseTitle,
-                            fontWeight = FontWeight.Bold,
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                        if (release.publishedAt.isNotBlank()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        // Current version
+                        Column {
                             Text(
-                                text = "Released on ${release.publishedAt.take(10)} • ${release.formattedSize}",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                text = "CURRENT",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                            )
+                            Text(
+                                text = "v${BuildConfig.VERSION_NAME}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+
+                        // Arrow
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp)
+                        )
+
+                        // Latest version badge (with full width space, NEVER squished!)
+                        Surface(
+                            color = Color(0xFF1E293B),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text(
+                                text = release.tagName,
+                                color = Color.White,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
                             )
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(10.dp))
+                if (release.publishedAt.isNotBlank() || release.formattedSize.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = listOf(
+                            release.publishedAt.take(10).let { if (it.isNotBlank()) "Published: $it" else "" },
+                            release.formattedSize
+                        ).filter { it.isNotBlank() }.joinToString(" • "),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
+                        modifier = Modifier.padding(horizontal = 4.dp)
+                    )
+                }
 
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // 3. Release Notes / Changelog Box
                 Text(
-                    text = "Changelog / Release Notes:",
+                    text = "What's New in this Release:",
                     style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
 
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(6.dp))
 
-                // Scrollable release notes box
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(max = 160.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f))
-                        .padding(8.dp)
+                        .heightIn(min = 60.dp, max = 150.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
+                        .padding(12.dp)
                         .verticalScroll(scrollState)
                 ) {
                     Text(
-                        text = release.releaseNotes.ifBlank { "No detailed release notes provided." },
+                        text = release.releaseNotes.ifBlank { "Bug fixes and performance improvements." },
                         style = MaterialTheme.typography.bodySmall,
-                        fontFamily = FontFamily.Monospace,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                 }
 
-                // Download Progress / Error Display
+                // 4. Download Progress / Error States
                 when (downloadState) {
                     is UpdateDownloadState.Downloading -> {
                         Spacer(modifier = Modifier.height(12.dp))
@@ -355,7 +413,7 @@ fun AppUpdateDialog(
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Text(
-                                    text = "Downloading APK update...",
+                                    text = "Downloading update...",
                                     style = MaterialTheme.typography.labelSmall,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.primary
@@ -375,94 +433,116 @@ fun AppUpdateDialog(
                     }
                     is UpdateDownloadState.ReadyToInstall -> {
                         Spacer(modifier = Modifier.height(12.dp))
-                        Card(
-                            colors = CardDefaults.cardColors(containerColor = Color(0xFF10B981).copy(alpha = 0.15f)),
+                        Surface(
+                            color = Color(0xFF10B981).copy(alpha = 0.15f),
                             shape = RoundedCornerShape(8.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Row(modifier = Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.CloudDownload, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(18.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("APK downloaded. Ready to install.", style = MaterialTheme.typography.bodySmall, color = Color(0xFF10B981), fontWeight = FontWeight.Bold)
+                            Row(
+                                modifier = Modifier.padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.CloudDownload, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(20.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Download complete! Ready to install.", style = MaterialTheme.typography.bodySmall, color = Color(0xFF10B981), fontWeight = FontWeight.Bold)
                             }
                         }
                     }
                     is UpdateDownloadState.Error -> {
                         Spacer(modifier = Modifier.height(12.dp))
-                        Card(
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+                        Surface(
+                            color = MaterialTheme.colorScheme.errorContainer,
                             shape = RoundedCornerShape(8.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Row(modifier = Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
+                            Row(
+                                modifier = Modifier.padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(20.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
                                 Text(downloadState.message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onErrorContainer)
                             }
                         }
                     }
                     UpdateDownloadState.Idle -> {}
                 }
-            }
-        },
-        confirmButton = {
-            when (downloadState) {
-                is UpdateDownloadState.Downloading -> {
-                    Button(
-                        onClick = {},
-                        enabled = false,
-                        modifier = Modifier.testTag("downloading_update_button")
-                    ) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(16.dp),
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.onPrimary
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Downloading...")
+
+                Spacer(modifier = Modifier.height(18.dp))
+
+                // 5. Action Buttons: Prominent "Update Now" + Secondary "Later" & "GitHub"
+                when (downloadState) {
+                    is UpdateDownloadState.Downloading -> {
+                        Button(
+                            onClick = {},
+                            enabled = false,
+                            shape = RoundedCornerShape(24.dp),
+                            modifier = Modifier.fillMaxWidth().height(48.dp).testTag("downloading_update_button")
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.onPrimary
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Downloading update...")
+                        }
+                    }
+                    is UpdateDownloadState.ReadyToInstall -> {
+                        Button(
+                            onClick = onDownloadAndInstall,
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
+                            shape = RoundedCornerShape(24.dp),
+                            modifier = Modifier.fillMaxWidth().height(48.dp).testTag("install_downloaded_apk_button")
+                        ) {
+                            Icon(imageVector = Icons.Default.SystemUpdate, contentDescription = null, modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Install Update Now", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    else -> {
+                        Button(
+                            onClick = onDownloadAndInstall,
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E3A8A)),
+                            shape = RoundedCornerShape(24.dp),
+                            modifier = Modifier.fillMaxWidth().height(48.dp).testTag("confirm_download_update_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CloudDownload,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp),
+                                tint = Color.White
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Update Now", color = Color.White, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
-                is UpdateDownloadState.ReadyToInstall -> {
-                    Button(
-                        onClick = onDownloadAndInstall,
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
-                        modifier = Modifier.testTag("install_downloaded_apk_button")
-                    ) {
-                        Icon(imageVector = Icons.Default.SystemUpdate, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Install Update Now")
-                    }
-                }
-                else -> {
-                    Button(
-                        onClick = onDownloadAndInstall,
-                        modifier = Modifier.testTag("confirm_download_update_button")
-                    ) {
-                        Icon(imageVector = Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Download & Update")
-                    }
-                }
-            }
-        },
-        dismissButton = {
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                TextButton(
-                    onClick = onViewOnGitHub,
-                    modifier = Modifier.testTag("view_github_release_button")
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(imageVector = Icons.Default.OpenInBrowser, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("GitHub")
-                }
-                TextButton(
-                    onClick = onDismiss,
-                    modifier = Modifier.testTag("dismiss_update_dialog_button")
-                ) {
-                    Text("Later")
+                    TextButton(
+                        onClick = onViewOnGitHub,
+                        modifier = Modifier.testTag("view_github_release_button")
+                    ) {
+                        Icon(imageVector = Icons.Default.OpenInBrowser, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("View on GitHub")
+                    }
+
+                    TextButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.testTag("dismiss_update_dialog_button")
+                    ) {
+                        Text("Later", fontWeight = FontWeight.SemiBold)
+                    }
                 }
             }
-        },
-        modifier = Modifier.testTag("app_update_dialog")
-    )
+        }
+    }
 }

@@ -74,7 +74,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
 import com.example.data.model.DocumentEntity
-import com.example.ui.components.AppUpdateBanner
 import com.example.ui.components.AppUpdateDialog
 import com.example.ui.viewmodel.PdfViewModel
 import java.text.SimpleDateFormat
@@ -94,7 +93,6 @@ fun LibraryScreen(
 
     var searchQuery by remember { mutableStateOf("") }
     var selectedCategoryIndex by remember { mutableIntStateOf(0) } // 0: All, 1: PDF, 2: Books, 3: Favorites, 4: Offline
-    var showUpdateDialog by remember { mutableStateOf(false) }
 
     val openPdfLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -154,17 +152,6 @@ fun LibraryScreen(
                     .padding(horizontal = 18.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // GitHub Release Update Notification Banner
-                latestRelease?.let { release ->
-                    item {
-                        AppUpdateBanner(
-                            release = release,
-                            onOpenUpdateDetails = { showUpdateDialog = true },
-                            onDismiss = { viewModel.dismissUpdateNotification() }
-                        )
-                    }
-                }
-
                 // Header (from Image 1: "Good morning Reader 👋" + profile avatar)
                 item {
                     Spacer(modifier = Modifier.height(12.dp))
@@ -475,7 +462,8 @@ fun LibraryScreen(
             }
         }
 
-        if (showUpdateDialog && latestRelease != null) {
+        // Modal Popup Dialog when a new version is available
+        if (latestRelease != null) {
             AppUpdateDialog(
                 release = latestRelease!!,
                 downloadState = downloadState,
@@ -486,7 +474,7 @@ fun LibraryScreen(
                     viewModel.appUpdateManager.launchBrowserUrl(latestRelease!!.htmlUrl)
                 },
                 onDismiss = {
-                    showUpdateDialog = false
+                    viewModel.dismissUpdateNotification()
                 }
             )
         }
