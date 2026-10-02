@@ -93,17 +93,20 @@ jobs:
       - name: Build Debug APK
         if: ${{ github.event.inputs.build_type == 'debug' }}
         run: |
-          ${{ env.gradle_cmd }} assembleDebug --no-daemon
+          ${{ env.gradle_cmd }} assembleDebug -PversionCode=${{ github.run_number }} -PversionName=1.0.0-build-${{ github.run_number }} --no-daemon
+        env:
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
 
       - name: Build Release APK
         if: ${{ github.event.inputs.build_type != 'debug' }}
         run: |
-          ${{ env.gradle_cmd }} assembleRelease --no-daemon || ${{ env.gradle_cmd }} assembleDebug --no-daemon
+          ${{ env.gradle_cmd }} assembleRelease -PversionCode=${{ github.run_number }} -PversionName=1.0.0-build-${{ github.run_number }} --no-daemon || ${{ env.gradle_cmd }} assembleDebug -PversionCode=${{ github.run_number }} -PversionName=1.0.0-build-${{ github.run_number }} --no-daemon
         env:
           KEYSTORE_PATH: ${{ secrets.KEYSTORE_PATH }}
           STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
 
       - name: Locate Output APK
         id: find_apk

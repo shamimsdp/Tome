@@ -330,8 +330,9 @@ fun AppUpdateDialog(
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                             )
+                            val currentDisplayVer = BuildConfig.VERSION_NAME.let { if (it.startsWith("v", ignoreCase = true)) it else "v$it" }
                             Text(
-                                text = "v${BuildConfig.VERSION_NAME}",
+                                text = currentDisplayVer,
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.onSurface

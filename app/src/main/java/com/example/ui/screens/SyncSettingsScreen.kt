@@ -388,8 +388,9 @@ fun SyncSettingsScreen(
                                         style = MaterialTheme.typography.titleMedium,
                                         fontWeight = FontWeight.Bold
                                     )
+                                    val displayVer = BuildConfig.VERSION_NAME.let { if (it.startsWith("v", ignoreCase = true)) it else "v$it" }
                                     Text(
-                                        text = "Current: v${BuildConfig.VERSION_NAME} (Build ${BuildConfig.VERSION_CODE})",
+                                        text = "Current: $displayVer (Build ${BuildConfig.VERSION_CODE})",
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )

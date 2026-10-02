@@ -13,12 +13,19 @@ android {
   namespace = "com.example"
   compileSdk { version = release(36) { minorApiLevel = 1 } }
 
+  val envRunNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull()
+  val propVersionCode = (project.findProperty("versionCode") as? String)?.toIntOrNull()
+  val propVersionName = project.findProperty("versionName") as? String
+
+  val computedVersionCode = propVersionCode ?: envRunNumber ?: 13
+  val computedVersionName = propVersionName ?: (if (envRunNumber != null) "1.0.0-build-$envRunNumber" else "1.0.0-build-13")
+
   defaultConfig {
     applicationId = "com.aistudio.pdfreader.kpwzqm"
     minSdk = 24
     targetSdk = 36
-    versionCode = 1
-    versionName = "1.0"
+    versionCode = computedVersionCode
+    versionName = computedVersionName
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }

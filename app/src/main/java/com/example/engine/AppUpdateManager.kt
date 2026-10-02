@@ -159,8 +159,9 @@ class AppUpdateManager(private val context: Context) {
             val cleanVersion = tagName.trimStart('v', 'V')
 
             // Compare versions
-            val currentVersion = BuildConfig.VERSION_NAME
-            val isNewer = isVersionNewer(cleanVersion, currentVersion)
+            val currentVersion = getInstalledVersionName()
+            val currentCode = getInstalledVersionCode()
+            val isNewer = isVersionNewer(cleanVersion, currentVersion, currentCode)
 
             // Look for APK in assets
             var apkDownloadUrl = ""
@@ -360,6 +361,39 @@ class AppUpdateManager(private val context: Context) {
         _checkStatusMessage.value = "Simulated update detected: v$nextVersion"
     }
 
+    fun getInstalledVersionName(): String {
+        return try {
+            val pInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.packageManager.getPackageInfo(context.packageName, android.content.pm.PackageManager.PackageInfoFlags.of(0))
+            } else {
+                @Suppress("DEPRECATION")
+                context.packageManager.getPackageInfo(context.packageName, 0)
+            }
+            pInfo.versionName ?: BuildConfig.VERSION_NAME
+        } catch (_: Exception) {
+            BuildConfig.VERSION_NAME
+        }
+    }
+
+    fun getInstalledVersionCode(): Int {
+        return try {
+            val pInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.packageManager.getPackageInfo(context.packageName, android.content.pm.PackageManager.PackageInfoFlags.of(0))
+            } else {
+                @Suppress("DEPRECATION")
+                context.packageManager.getPackageInfo(context.packageName, 0)
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                pInfo.longVersionCode.toInt()
+            } else {
+                @Suppress("DEPRECATION")
+                pInfo.versionCode
+            }
+        } catch (_: Exception) {
+            BuildConfig.VERSION_CODE
+        }
+    }
+
     private fun incrementVersion(ver: String): String {
         val parts = ver.split(".").mapNotNull { it.toIntOrNull() }.toMutableList()
         if (parts.isEmpty()) return "1.1"
@@ -367,25 +401,61 @@ class AppUpdateManager(private val context: Context) {
         return parts.joinToString(".")
     }
 
+    data class SemVer(
+        val major: Int = 0,
+        val minor: Int = 0,
+        val patch: Int = 0,
+        val build: Int = 0
+    )
+
+    fun parseSemVer(versionStr: String, fallbackBuildCode: Int = 0): SemVer {
+        val clean = versionStr.trim().trimStart('v', 'V')
+
+        // Look for build number (e.g., "-build-13", "-b13", "build13", "+13")
+        val buildRegex = Regex("""(?:build|b)[-.]?(\d+)""", RegexOption.IGNORE_CASE)
+        val buildMatch = buildRegex.find(clean)
+        val extractedBuild = buildMatch?.groupValues?.getOrNull(1)?.toIntOrNull()
+            ?: if (fallbackBuildCode > 0) fallbackBuildCode else 0
+
+        val basePart = clean.substringBefore('-').substringBefore('+').substringBefore(' ')
+        val segments = basePart.split(".").mapNotNull { it.filter { c -> c.isDigit() }.toIntOrNull() }
+
+        val major = segments.getOrElse(0) { 0 }
+        val minor = segments.getOrElse(1) { 0 }
+        val patch = segments.getOrElse(2) { 0 }
+
+        return SemVer(major, minor, patch, extractedBuild)
+    }
+
     /**
-     * Compares two semantic version strings (e.g. "1.1.0" vs "1.0").
+     * Compares semantic version strings and build numbers.
      * Returns true if remoteVersion is strictly newer than currentVersion.
      */
-    fun isVersionNewer(remoteVersion: String, currentVersion: String): Boolean {
+    fun isVersionNewer(
+        remoteVersion: String,
+        currentVersion: String,
+        currentBuildCode: Int = BuildConfig.VERSION_CODE
+    ): Boolean {
         try {
-            val remoteParts = remoteVersion.split(".").map { it.filter { c -> c.isDigit() }.toIntOrNull() ?: 0 }
-            val currentParts = currentVersion.split(".").map { it.filter { c -> c.isDigit() }.toIntOrNull() ?: 0 }
+            val cleanRemote = remoteVersion.trim().trimStart('v', 'V')
+            val cleanCurrent = currentVersion.trim().trimStart('v', 'V')
 
-            val maxLen = maxOf(remoteParts.size, currentParts.size)
-            for (i in 0 until maxLen) {
-                val r = remoteParts.getOrElse(i) { 0 }
-                val c = currentParts.getOrElse(i) { 0 }
-                if (r > c) return true
-                if (r < c) return false
+            // Exact string match (ignoring leading 'v')
+            if (cleanRemote.equals(cleanCurrent, ignoreCase = true)) {
+                return false
             }
+
+            val r = parseSemVer(cleanRemote, 0)
+            val c = parseSemVer(cleanCurrent, currentBuildCode)
+
+            if (r.major != c.major) return r.major > c.major
+            if (r.minor != c.minor) return r.minor > c.minor
+            if (r.patch != c.patch) return r.patch > c.patch
+            if (r.build != c.build) return r.build > c.build
+
             return false
         } catch (_: Exception) {
-            return remoteVersion != currentVersion
+            return remoteVersion.trimStart('v', 'V') != currentVersion.trimStart('v', 'V')
         }
     }
 }
