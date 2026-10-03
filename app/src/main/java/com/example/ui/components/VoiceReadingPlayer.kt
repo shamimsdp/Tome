@@ -143,6 +143,7 @@ fun VoiceReadingBottomBar(
     modifier: Modifier = Modifier
 ) {
     var speedMenuExpanded by remember { mutableStateOf(false) }
+    var showSpeedSlider by remember { mutableStateOf(false) }
     var showVolumeSlider by remember { mutableStateOf(false) }
     var showVoiceSettings by remember { mutableStateOf(false) }
     var lastNonZeroVolume by remember { mutableFloatStateOf(if (playbackVolume > 0f) playbackVolume else 1.0f) }
@@ -329,7 +330,94 @@ fun VoiceReadingBottomBar(
                 )
             }
 
-            // 4. Expandable Volume Slider (if toggled)
+            // 4. Expandable Speed Slider (slider control for speech playback speed)
+            AnimatedVisibility(
+                visible = showSpeedSlider,
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut()
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp)
+                        .testTag("voice_reading_speed_slider_container")
+                ) {
+                    Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.Speed,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Speech Playback Speed",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            Text(
+                                text = String.format(java.util.Locale.US, "%.2fx", playbackSpeed) + if (playbackSpeed == 1.0f) " (Normal)" else "",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(2.dp))
+
+                        Slider(
+                            value = playbackSpeed,
+                            onValueChange = onSelectSpeed,
+                            valueRange = 0.5f..2.5f,
+                            steps = 19,
+                            colors = SliderDefaults.colors(
+                                thumbColor = MaterialTheme.colorScheme.primary,
+                                activeTrackColor = MaterialTheme.colorScheme.primary
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("speech_playback_speed_slider")
+                        )
+
+                        // Quick speed preset buttons
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f, 2.5f).forEach { preset ->
+                                val isSelected = (playbackSpeed * 100).toInt() == (preset * 100).toInt()
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .clickable { onSelectSpeed(preset) }
+                                        .padding(horizontal = 4.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        text = "${preset}x",
+                                        fontSize = 11.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 5. Expandable Volume Slider (if toggled)
             AnimatedVisibility(
                 visible = showVolumeSlider,
                 enter = expandVertically() + fadeIn(),
@@ -510,56 +598,32 @@ fun VoiceReadingBottomBar(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    // Speed selector pill
-                    Box {
-                        Surface(
-                            shape = RoundedCornerShape(16.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant,
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(16.dp))
-                                .clickable { speedMenuExpanded = true }
-                                .testTag("voice_speed_selector")
+                    // Speed selector pill (toggles the speech playback speed slider)
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = if (showSpeedSlider) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(16.dp))
+                            .clickable { showSpeedSlider = !showSpeedSlider }
+                            .testTag("voice_speed_selector")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Speed,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(15.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = "${playbackSpeed}x",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                            }
-                        }
-
-                        DropdownMenu(
-                            expanded = speedMenuExpanded,
-                            onDismissRequest = { speedMenuExpanded = false }
-                        ) {
-                            availableSpeeds.forEach { speed ->
-                                val isSelected = playbackSpeed == speed
-                                DropdownMenuItem(
-                                    text = {
-                                        Text(
-                                            text = "${speed}x" + if (speed == 1.0f) " (Normal)" else "",
-                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                            color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                                        )
-                                    },
-                                    onClick = {
-                                        onSelectSpeed(speed)
-                                        speedMenuExpanded = false
-                                    }
-                                )
-                            }
+                            Icon(
+                                imageVector = Icons.Default.Speed,
+                                contentDescription = "Adjust Speech Speed",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "${playbackSpeed}x",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
                         }
                     }
 
@@ -690,13 +754,111 @@ fun VoiceSettingsSheet(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Voice & Speech Settings",
+                        text = "Read Aloud & Voice Settings",
                         style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.testTag("read_aloud_modal_title")
                     )
                 }
                 IconButton(onClick = onDismiss, modifier = Modifier.testTag("close_voice_settings_button")) {
                     Icon(imageVector = Icons.Default.Close, contentDescription = "Close")
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Prominent Speech Playback Speed Slider Card
+            Card(
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("read_aloud_speed_slider_card")
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Speed,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Speech Playback Speed",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(2.dp)
+                        ) {
+                            Text(
+                                text = String.format(java.util.Locale.US, "%.2fx", playbackSpeed) + when {
+                                    playbackSpeed < 0.85f -> " (Slower)"
+                                    playbackSpeed in 0.95f..1.05f -> " (Normal)"
+                                    playbackSpeed in 1.1f..1.4f -> " (Fast)"
+                                    else -> " (Very Fast)"
+                                },
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Slider(
+                        value = playbackSpeed,
+                        onValueChange = onSpeedChange,
+                        valueRange = 0.5f..2.5f,
+                        steps = 19,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("read_aloud_speed_slider"),
+                        colors = SliderDefaults.colors(
+                            thumbColor = MaterialTheme.colorScheme.primary,
+                            activeTrackColor = MaterialTheme.colorScheme.primary
+                        )
+                    )
+
+                    // Quick speed presets
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f).forEach { preset ->
+                            val isSelected = kotlin.math.abs(playbackSpeed - preset) < 0.05f
+                            FilterChip(
+                                selected = isSelected,
+                                onClick = { onSpeedChange(preset) },
+                                label = {
+                                    Text(
+                                        text = "${preset}x" + if (preset == 1.0f) " (Normal)" else "",
+                                        fontSize = 11.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                },
+                                modifier = Modifier.testTag("speed_preset_${(preset * 100).toInt()}")
+                            )
+                        }
+                    }
                 }
             }
 

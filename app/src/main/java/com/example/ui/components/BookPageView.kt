@@ -2,6 +2,8 @@ package com.example.ui.components
 
 import android.graphics.Bitmap
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
@@ -9,6 +11,7 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -16,9 +19,13 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -27,16 +34,22 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -44,6 +57,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
@@ -51,6 +65,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.TransformOrigin
@@ -58,6 +74,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -90,6 +107,7 @@ fun BookPageView(
     totalPages: Int,
     pdfEngine: PdfEngine,
     readingTheme: ReadingTheme,
+    isDarkTheme: Boolean = false,
     isBookmarked: Boolean,
     annotations: List<AnnotationEntity>,
     searchMatches: List<SearchMatch>,
@@ -115,6 +133,27 @@ fun BookPageView(
     val flipProgress = remember { Animatable(0f) }
     var isFlipping by remember { mutableStateOf(false) }
     var flipDirection by remember { mutableStateOf(FlipDirection.NEXT) }
+
+    // Pinch-to-zoom & Pan state
+    var zoomScale by remember { mutableFloatStateOf(1.0f) }
+    var panOffset by remember { mutableStateOf(Offset.Zero) }
+
+    // Helper to keep pan offset within visible scaled page boundaries
+    fun clampPan(offset: Offset, scale: Float, width: Float, height: Float): Offset {
+        if (scale <= 1.0f) return Offset.Zero
+        val maxPanX = ((width * scale) - width) / 2f
+        val maxPanY = ((height * scale) - height) / 2f
+        return Offset(
+            x = offset.x.coerceIn(-maxPanX, maxPanX),
+            y = offset.y.coerceIn(-maxPanY, maxPanY)
+        )
+    }
+
+    // Reset zoom and pan whenever user navigates to a new page
+    LaunchedEffect(pageIndex) {
+        zoomScale = 1.0f
+        panOffset = Offset.Zero
+    }
 
     // Target page waiting to be acknowledged by the ViewModel
     var pendingTargetPage by remember { mutableStateOf<Int?>(null) }
@@ -155,10 +194,17 @@ fun BookPageView(
         }
     }
 
+    val pageBackground = when {
+        readingTheme == ReadingTheme.OLED_NIGHT -> Color(0xFF000000)
+        readingTheme == ReadingTheme.CHARCOAL -> Color(0xFF1E222A)
+        isDarkTheme && readingTheme == ReadingTheme.DAY -> Color(0xFF121824)
+        else -> readingTheme.paperColor
+    }
+
     BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
-            .background(readingTheme.paperColor)
+            .background(pageBackground)
             .padding(horizontal = 8.dp, vertical = 6.dp)
             .testTag("book_page_container"),
         contentAlignment = Alignment.Center
@@ -191,29 +237,39 @@ fun BookPageView(
                 ?: pdfEngine.getCachedBitmap(basePage)
                 ?: if (basePage == pageIndex) bitmap else null
 
-            SinglePageSheet(
-                pageIndex = basePage,
-                renderedBitmap = baseBitmap,
-                readingTheme = readingTheme,
-                isBookmarked = isBookmarked && basePage == pageIndex,
-                annotations = annotations,
-                searchMatches = searchMatches,
-                containerHeight = containerHeight,
-                isReadingRulerEnabled = isReadingRulerEnabled && !isFlipping,
-                readingRulerRatio = readingRulerRatio,
-                pageElements = pageElements,
-                isEditElementsMode = isEditElementsMode && !isFlipping,
-                onAnnotationClick = onAnnotationClick,
-                onRulerPositionChange = onRulerPositionChange,
-                onUpdateElementPosition = onUpdateElementPosition,
-                onDeleteElement = onDeleteElement,
-                onEditElement = onEditElement,
+            // Zoom & Pan Container for inspecting fine details
+            Box(
                 modifier = Modifier
                     .fillMaxSize()
+                    .clipToBounds()
                     .graphicsLayer {
-                        compositingStrategy = CompositingStrategy.Offscreen
+                        scaleX = zoomScale
+                        scaleY = zoomScale
+                        translationX = panOffset.x
+                        translationY = panOffset.y
                     }
-            )
+            ) {
+                SinglePageSheet(
+                    pageIndex = basePage,
+                    renderedBitmap = baseBitmap,
+                    readingTheme = readingTheme,
+                    isDarkTheme = isDarkTheme,
+                    isBookmarked = isBookmarked && basePage == pageIndex,
+                    annotations = annotations,
+                    searchMatches = searchMatches,
+                    containerHeight = containerHeight,
+                    isReadingRulerEnabled = isReadingRulerEnabled && !isFlipping && zoomScale <= 1.05f,
+                    readingRulerRatio = readingRulerRatio,
+                    pageElements = pageElements,
+                    isEditElementsMode = isEditElementsMode && !isFlipping && zoomScale <= 1.05f,
+                    onAnnotationClick = onAnnotationClick,
+                    onRulerPositionChange = onRulerPositionChange,
+                    onUpdateElementPosition = onUpdateElementPosition,
+                    onDeleteElement = onDeleteElement,
+                    onEditElement = onEditElement,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
 
             // Dynamic drop shadow cast on the base layer during flip
             if (isFlipping) {
@@ -273,6 +329,7 @@ fun BookPageView(
                             pageIndex = turningPage,
                             renderedBitmap = turningBitmap,
                             readingTheme = readingTheme,
+                            isDarkTheme = isDarkTheme,
                             isBookmarked = isBookmarked && turningPage == pageIndex,
                             annotations = annotations,
                             searchMatches = searchMatches,
@@ -330,31 +387,98 @@ fun BookPageView(
             }
 
             // =========================================================================
-            // 3. INTERACTIVE GESTURE DETECTOR
+            // 3. INTERACTIVE GESTURE DETECTOR (PINCH-TO-ZOOM, PAN, AND 3D PAGE FLIP)
             // =========================================================================
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .pointerInput(pageIndex, isHighlightMode, isEditElementsMode, isPageFlipEnabled, totalPages) {
+                    .pointerInput(pageIndex, isHighlightMode, isEditElementsMode, isPageFlipEnabled, totalPages, zoomScale) {
                         awaitEachGesture {
                             if (isEditElementsMode) return@awaitEachGesture
                             val down = awaitFirstDown(requireUnconsumed = false)
                             var totalDragX = 0f
                             var isDrag = false
                             val touchSlop = viewConfiguration.touchSlop
+                            val w = size.width.toFloat()
+                            val h = size.height.toFloat()
 
                             while (true) {
                                 val event = awaitPointerEvent()
-                                val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                val pressedPointers = event.changes.filter { it.pressed }
 
-                                if (!change.pressed) {
+                                if (pressedPointers.size >= 2) {
+                                    // MULTI-TOUCH: Pinch-to-Zoom & Multi-touch Pan
+                                    if (isFlipping) {
+                                        coroutineScope.launch {
+                                            flipProgress.snapTo(0f)
+                                            isFlipping = false
+                                        }
+                                    }
+
+                                    val zoomFactor = event.calculateZoom()
+                                    val panDelta = event.calculatePan()
+
+                                    val newScale = (zoomScale * zoomFactor).coerceIn(1.0f, 5.0f)
+                                    zoomScale = newScale
+
+                                    if (newScale > 1.0f) {
+                                        panOffset = clampPan(panOffset + panDelta, newScale, w, h)
+                                    } else {
+                                        panOffset = Offset.Zero
+                                    }
+
+                                    event.changes.forEach { it.consume() }
+                                } else if (pressedPointers.size == 1) {
+                                    val change = pressedPointers.first()
+
+                                    if (zoomScale > 1.05f) {
+                                        // ZOOMED IN: 1-finger drag pans around the zoomed page smoothly!
+                                        val dragDelta = change.position - change.previousPosition
+                                        panOffset = clampPan(panOffset + dragDelta, zoomScale, w, h)
+                                        change.consume()
+                                    } else {
+                                        // 1X NORMAL: Horizontal swipe initiates 3D page flip
+                                        val dragDelta = change.position.x - change.previousPosition.x
+                                        totalDragX += dragDelta
+
+                                        if (!isDrag && abs(totalDragX) > touchSlop) {
+                                            isDrag = true
+                                            if (isPageFlipEnabled) {
+                                                if (totalDragX < 0 && pageIndex < totalPages - 1) {
+                                                    isFlipping = true
+                                                    flipDirection = FlipDirection.NEXT
+                                                } else if (totalDragX > 0 && pageIndex > 0) {
+                                                    isFlipping = true
+                                                    flipDirection = FlipDirection.PREV
+                                                }
+                                            }
+                                        }
+
+                                        if (isDrag) {
+                                            change.consume()
+                                            if (isFlipping) {
+                                                val p = if (flipDirection == FlipDirection.NEXT) {
+                                                    (-totalDragX / w).coerceIn(0f, 1f)
+                                                } else {
+                                                    (totalDragX / w).coerceIn(0f, 1f)
+                                                }
+                                                coroutineScope.launch {
+                                                    flipProgress.snapTo(p)
+                                                }
+                                            }
+                                        }
+                                    }
+                                } else {
                                     // Pointer released
-                                    if (isDrag && isFlipping) {
+                                    val change = event.changes.firstOrNull() ?: break
+
+                                    if (zoomScale > 1.05f) {
+                                        panOffset = clampPan(panOffset, zoomScale, w, h)
+                                    } else if (isDrag && isFlipping) {
                                         change.consume()
                                         val currentP = flipProgress.value
                                         coroutineScope.launch {
                                             if (currentP > 0.22f) {
-                                                // Complete the flip smoothly with natural physics
                                                 val remainingDuration = (220 * (1f - currentP)).toInt().coerceIn(80, 220)
                                                 flipProgress.animateTo(
                                                     targetValue = 1f,
@@ -364,18 +488,15 @@ fun BookPageView(
                                                     )
                                                 )
 
-                                                // Record pending target page to synchronize handoff
                                                 val targetPage = if (flipDirection == FlipDirection.NEXT) pageIndex + 1 else pageIndex - 1
                                                 pendingTargetPage = targetPage
 
-                                                // Advance in ViewModel
                                                 if (flipDirection == FlipDirection.NEXT) {
                                                     onTapRight()
                                                 } else {
                                                     onTapLeft()
                                                 }
 
-                                                // Safety timeout so UI never remains in flipping state
                                                 launch {
                                                     delay(350)
                                                     if (pendingTargetPage != null) {
@@ -385,7 +506,6 @@ fun BookPageView(
                                                     }
                                                 }
                                             } else {
-                                                // Cancel flip: elastic snap back to resting position
                                                 flipProgress.animateTo(
                                                     targetValue = 0f,
                                                     animationSpec = spring(stiffness = Spring.StiffnessMediumLow)
@@ -395,11 +515,14 @@ fun BookPageView(
                                         }
                                     } else if (!isDrag) {
                                         // Tap gesture handling
-                                        val xRatio = down.position.x / size.width
-                                        val yRatio = down.position.y / size.height
+                                        val xRatio = down.position.x / w
+                                        val yRatio = down.position.y / h
 
                                         if (isHighlightMode) {
                                             onAddHighlightAtRatio(yRatio)
+                                        } else if (zoomScale > 1.05f) {
+                                            // When inspecting zoomed details, tap toggles controls without accidental page flip
+                                            onTapCenter()
                                         } else {
                                             when {
                                                 xRatio < 0.25f -> {
@@ -459,42 +582,103 @@ fun BookPageView(
                                         }
                                     }
                                     break
-                                } else {
-                                    // Pointer dragged
-                                    val dragDelta = change.position.x - change.previousPosition.x
-                                    totalDragX += dragDelta
-
-                                    if (!isDrag && abs(totalDragX) > touchSlop) {
-                                        isDrag = true
-                                        if (isPageFlipEnabled) {
-                                            if (totalDragX < 0 && pageIndex < totalPages - 1) {
-                                                isFlipping = true
-                                                flipDirection = FlipDirection.NEXT
-                                            } else if (totalDragX > 0 && pageIndex > 0) {
-                                                isFlipping = true
-                                                flipDirection = FlipDirection.PREV
-                                            }
-                                        }
-                                    }
-
-                                    if (isDrag) {
-                                        change.consume()
-                                        if (isFlipping) {
-                                            val p = if (flipDirection == FlipDirection.NEXT) {
-                                                (-totalDragX / size.width).coerceIn(0f, 1f)
-                                            } else {
-                                                (totalDragX / size.width).coerceIn(0f, 1f)
-                                            }
-                                            coroutineScope.launch {
-                                                flipProgress.snapTo(p)
-                                            }
-                                        }
-                                    }
                                 }
                             }
                         }
                     }
             )
+
+            // =========================================================================
+            // 4. FLOATING PINCH-TO-ZOOM INSPECTION CONTROLS OVERLAY
+            // =========================================================================
+            AnimatedVisibility(
+                visible = zoomScale > 1.05f,
+                enter = fadeIn() + slideInVertically { -it },
+                exit = fadeOut() + slideOutVertically { -it },
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 16.dp, end = 16.dp)
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+                    tonalElevation = 8.dp,
+                    shadowElevation = 8.dp,
+                    border = BorderStroke(
+                        1.dp,
+                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
+                    ),
+                    modifier = Modifier.testTag("pinch_zoom_overlay")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(
+                            onClick = {
+                                val newScale = (zoomScale - 0.5f).coerceAtLeast(1.0f)
+                                zoomScale = newScale
+                                panOffset = if (newScale <= 1.0f) Offset.Zero else clampPan(panOffset, newScale, containerWidth.value, containerHeight.value)
+                            },
+                            modifier = Modifier.size(30.dp).testTag("zoom_out_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Remove,
+                                contentDescription = "Zoom Out",
+                                modifier = Modifier.size(16.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+
+                        Text(
+                            text = "${(zoomScale * 100).toInt()}%",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.padding(horizontal = 4.dp).testTag("zoom_level_text")
+                        )
+
+                        IconButton(
+                            onClick = {
+                                val newScale = (zoomScale + 0.5f).coerceAtMost(5.0f)
+                                zoomScale = newScale
+                                panOffset = clampPan(panOffset, newScale, containerWidth.value, containerHeight.value)
+                            },
+                            modifier = Modifier.size(30.dp).testTag("zoom_in_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = "Zoom In",
+                                modifier = Modifier.size(16.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(4.dp))
+
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable {
+                                    zoomScale = 1.0f
+                                    panOffset = Offset.Zero
+                                }
+                                .testTag("reset_zoom_button")
+                        ) {
+                            Text(
+                                text = "Reset",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -508,6 +692,7 @@ private fun SinglePageSheet(
     pageIndex: Int,
     renderedBitmap: Bitmap?,
     readingTheme: ReadingTheme,
+    isDarkTheme: Boolean = false,
     isBookmarked: Boolean,
     annotations: List<AnnotationEntity>,
     searchMatches: List<SearchMatch>,
@@ -527,6 +712,38 @@ private fun SinglePageSheet(
         renderedBitmap?.asImageBitmap()
     }
 
+    val pageColor = when {
+        readingTheme == ReadingTheme.OLED_NIGHT -> Color(0xFF000000)
+        readingTheme == ReadingTheme.CHARCOAL -> Color(0xFF1E222A)
+        isDarkTheme && readingTheme == ReadingTheme.DAY -> Color(0xFF121824)
+        else -> readingTheme.paperColor
+    }
+
+    // High-contrast low-light color filter for comfortable nighttime reading
+    val pageColorFilter = remember(readingTheme, isDarkTheme) {
+        when {
+            readingTheme == ReadingTheme.OLED_NIGHT -> {
+                // True AMOLED pure black inversion
+                ColorFilter.colorMatrix(ColorMatrix(floatArrayOf(
+                    -1f,  0f,  0f, 0f, 255f,
+                     0f, -1f,  0f, 0f, 255f,
+                     0f,  0f, -1f, 0f, 255f,
+                     0f,  0f,  0f, 1f,   0f
+                )))
+            }
+            readingTheme == ReadingTheme.CHARCOAL || (isDarkTheme && readingTheme == ReadingTheme.DAY) -> {
+                // Soft charcoal low-light matrix (protects eyes from bright white pages)
+                ColorFilter.colorMatrix(ColorMatrix(floatArrayOf(
+                    -0.85f,  0f,     0f,    0f, 225f,
+                     0f,    -0.85f,  0f,    0f, 225f,
+                     0f,     0f,    -0.80f, 0f, 225f,
+                     0f,     0f,     0f,    1f,   0f
+                )))
+            }
+            else -> null
+        }
+    }
+
     Surface(
         modifier = modifier
             .fillMaxSize()
@@ -534,29 +751,25 @@ private fun SinglePageSheet(
                 compositingStrategy = CompositingStrategy.Offscreen
             },
         shape = RoundedCornerShape(4.dp),
-        color = readingTheme.paperColor
+        color = pageColor
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
             if (imageBitmap != null) {
-                // Bitmap Page Rendering with Reading Theme Color Tint
+                // Bitmap Page Rendering with Reading Theme Color Tint and Low-Light ColorFilter
                 Image(
                     bitmap = imageBitmap,
                     contentDescription = "PDF Page ${pageIndex + 1}",
+                    colorFilter = pageColorFilter,
                     modifier = Modifier
                         .fillMaxSize()
                         .drawWithContent {
                             drawContent()
 
-                            // Theme overlay tint (for Sepia, Sage, Charcoal, OLED)
-                            if (readingTheme != ReadingTheme.DAY) {
-                                val blendColor = when (readingTheme) {
-                                    ReadingTheme.SEPIA -> Color(0x28D4A373)
-                                    ReadingTheme.SAGE -> Color(0x2052796F)
-                                    ReadingTheme.CHARCOAL -> Color(0xD01E222A)
-                                    ReadingTheme.OLED_NIGHT -> Color(0xE8000000)
-                                    else -> Color.Transparent
-                                }
-                                drawRect(blendColor)
+                            // Theme overlay tint (for Sepia, Sage)
+                            if (readingTheme == ReadingTheme.SEPIA) {
+                                drawRect(Color(0x28D4A373))
+                            } else if (readingTheme == ReadingTheme.SAGE) {
+                                drawRect(Color(0x2052796F))
                             }
                         }
                 )

@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -20,10 +21,13 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.Brightness6
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CloudSync
+import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.NewReleases
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Refresh
@@ -66,6 +70,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.BuildConfig
 import com.example.data.model.ReadingTheme
+import com.example.data.model.ThemeMode
 import com.example.ui.components.AppUpdateDialog
 import com.example.ui.components.HIGHLIGHT_COLORS
 import com.example.ui.viewmodel.PdfViewModel
@@ -82,6 +87,7 @@ fun SyncSettingsScreen(
     val isSyncing by viewModel.isSyncing.collectAsState()
     val lastSync by viewModel.lastSyncTimestamp.collectAsState()
     val syncLogs by viewModel.recentSyncLogs.collectAsState()
+    val themeMode by viewModel.themeMode.collectAsState()
     val currentTheme by viewModel.readingTheme.collectAsState()
     val selectedHighlightColor by viewModel.selectedHighlightColor.collectAsState()
     val latestRelease by viewModel.latestRelease.collectAsState()
@@ -290,6 +296,111 @@ fun SyncSettingsScreen(
                             onCheckedChange = { viewModel.setOfflineMode(it) },
                             modifier = Modifier.testTag("settings_offline_switch")
                         )
+                    }
+                }
+            }
+
+            // System-wide Dark Theme & Appearance Setting
+            item {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("app_theme_settings_card"),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+                    )
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(
+                                    imageVector = when (themeMode) {
+                                        ThemeMode.DARK -> Icons.Default.DarkMode
+                                        ThemeMode.LIGHT -> Icons.Default.LightMode
+                                        ThemeMode.SYSTEM -> Icons.Default.Brightness6
+                                    },
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column {
+                                    Text(
+                                        text = "System-Wide Dark Theme",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = "Improves readability in low-light environments",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+
+                            Switch(
+                                checked = themeMode == ThemeMode.DARK,
+                                onCheckedChange = { isChecked ->
+                                    viewModel.setThemeMode(if (isChecked) ThemeMode.DARK else ThemeMode.LIGHT)
+                                },
+                                modifier = Modifier.testTag("dark_theme_switch")
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        // Segmented Theme Selection Options
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            ThemeMode.values().forEach { mode ->
+                                val isSelected = themeMode == mode
+                                Surface(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clickable { viewModel.setThemeMode(mode) }
+                                        .testTag("theme_mode_${mode.name.lowercase()}"),
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface,
+                                    border = BorderStroke(
+                                        width = 1.dp,
+                                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
+                                    )
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(vertical = 10.dp, horizontal = 4.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        Icon(
+                                            imageVector = when (mode) {
+                                                ThemeMode.SYSTEM -> Icons.Default.Brightness6
+                                                ThemeMode.LIGHT -> Icons.Default.LightMode
+                                                ThemeMode.DARK -> Icons.Default.DarkMode
+                                            },
+                                            contentDescription = null,
+                                            tint = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(
+                                            text = mode.label.replace(" Mode", "").replace(" Theme", ""),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                            color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }

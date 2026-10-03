@@ -30,6 +30,8 @@ import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.CollectionsBookmark
+import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Brush
 import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.GridView
@@ -99,6 +101,8 @@ fun ReadingTopBar(
     onOpenVoiceSettings: (() -> Unit)? = null,
     onOpenSessionTimer: () -> Unit = {},
     onSelectTheme: (ReadingTheme) -> Unit,
+    isDarkTheme: Boolean = false,
+    onToggleDarkTheme: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var themeMenuExpanded by remember { mutableStateOf(false) }
@@ -300,7 +304,42 @@ fun ReadingTopBar(
                                 }
                             )
                         }
+
+                        DropdownMenuItem(
+                            text = {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = if (isDarkTheme) Icons.Default.LightMode else Icons.Default.DarkMode,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(20.dp),
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Text(
+                                        text = if (isDarkTheme) "Light Theme" else "Dark Theme (Low Light)",
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            },
+                            onClick = {
+                                onToggleDarkTheme()
+                                themeMenuExpanded = false
+                            }
+                        )
                     }
+                }
+
+                // System-wide Dark Theme quick toggle (Low Light reading)
+                IconButton(
+                    onClick = onToggleDarkTheme,
+                    modifier = Modifier.testTag("reader_dark_theme_toggle")
+                ) {
+                    Icon(
+                        imageVector = if (isDarkTheme) Icons.Default.LightMode else Icons.Default.DarkMode,
+                        contentDescription = if (isDarkTheme) "Switch to Light Theme" else "Switch to Dark Theme (Low Light)",
+                        tint = if (isDarkTheme) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                    )
                 }
 
                 // Page flip animation toggle button

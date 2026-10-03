@@ -6,6 +6,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.animation.Crossfade
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -31,6 +32,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import com.example.data.model.ReadingTheme
+import com.example.data.model.ThemeMode
 import com.example.ui.screens.AllNotesScreen
 import com.example.ui.screens.CloudScreen
 import com.example.ui.screens.LibraryScreen
@@ -61,8 +63,14 @@ class MainActivity : ComponentActivity() {
         viewModel.checkForAppUpdates(forceCheck = false)
 
         setContent {
+            val themeMode by viewModel.themeMode.collectAsState()
             val currentReadingTheme by viewModel.readingTheme.collectAsState()
-            val isDarkTheme = currentReadingTheme == ReadingTheme.CHARCOAL || currentReadingTheme == ReadingTheme.OLED_NIGHT
+            val systemInDark = isSystemInDarkTheme()
+            val isDarkTheme = when (themeMode) {
+                ThemeMode.SYSTEM -> systemInDark
+                ThemeMode.DARK -> true
+                ThemeMode.LIGHT -> false
+            } || (currentReadingTheme == ReadingTheme.CHARCOAL || currentReadingTheme == ReadingTheme.OLED_NIGHT)
 
             TomeTheme(darkTheme = isDarkTheme) {
                 MainAppContent(viewModel = viewModel)

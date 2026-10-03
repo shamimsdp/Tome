@@ -7,6 +7,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -31,6 +32,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.example.data.model.DocumentEntity
+import com.example.data.model.ReadingTheme
+import com.example.data.model.ThemeMode
 import com.example.ui.components.AddAnnotationDialog
 import com.example.ui.components.AddElementDialog
 import com.example.ui.components.BookPageView
@@ -138,6 +141,21 @@ fun ReaderScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val statusMessage by viewModel.statusMessage.collectAsState()
 
+    val themeMode by viewModel.themeMode.collectAsState()
+    val isSystemDark = isSystemInDarkTheme()
+    val isDarkTheme = when (themeMode) {
+        ThemeMode.SYSTEM -> isSystemDark
+        ThemeMode.DARK -> true
+        ThemeMode.LIGHT -> false
+    } || (readingTheme == ReadingTheme.CHARCOAL || readingTheme == ReadingTheme.OLED_NIGHT)
+
+    val pageBackground = when {
+        readingTheme == ReadingTheme.OLED_NIGHT -> androidx.compose.ui.graphics.Color(0xFF000000)
+        readingTheme == ReadingTheme.CHARCOAL -> androidx.compose.ui.graphics.Color(0xFF1E222A)
+        isDarkTheme && readingTheme == ReadingTheme.DAY -> androidx.compose.ui.graphics.Color(0xFF121824)
+        else -> readingTheme.paperColor
+    }
+
     LaunchedEffect(statusMessage) {
         statusMessage?.let {
             snackbarHostState.showSnackbar(it)
@@ -155,7 +173,7 @@ fun ReaderScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .background(readingTheme.paperColor)
+                .background(pageBackground)
         ) {
             // Main Book Page View
             BookPageView(
@@ -164,6 +182,7 @@ fun ReaderScreen(
                 totalPages = totalPages,
                 pdfEngine = viewModel.pdfEngine,
                 readingTheme = readingTheme,
+                isDarkTheme = isDarkTheme,
                 isBookmarked = isBookmarked,
                 annotations = annotations.filter { it.pageNumber == currentPageIndex },
                 searchMatches = searchResults,
@@ -246,7 +265,9 @@ fun ReaderScreen(
                     onStartVoiceReading = { viewModel.toggleVoiceReading() },
                     onOpenVoiceSettings = { showStandaloneVoiceSettingsSheet = true },
                     onOpenSessionTimer = { viewModel.openReadingSessionSheet() },
-                    onSelectTheme = { theme -> viewModel.setReadingTheme(theme) }
+                    onSelectTheme = { theme -> viewModel.setReadingTheme(theme) },
+                    isDarkTheme = isDarkTheme,
+                    onToggleDarkTheme = { viewModel.toggleDarkTheme() }
                 )
             }
 

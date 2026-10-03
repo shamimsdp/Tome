@@ -4,6 +4,10 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.LightMode
+import com.example.data.model.ThemeMode
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -90,6 +94,13 @@ fun LibraryScreen(
     val isOfflineMode by viewModel.isOfflineModeOnly.collectAsState()
     val latestRelease by viewModel.latestRelease.collectAsState()
     val downloadState by viewModel.updateDownloadState.collectAsState()
+    val themeMode by viewModel.themeMode.collectAsState()
+    val isSystemDark = isSystemInDarkTheme()
+    val isDark = when (themeMode) {
+        ThemeMode.SYSTEM -> isSystemDark
+        ThemeMode.DARK -> true
+        ThemeMode.LIGHT -> false
+    }
 
     var searchQuery by remember { mutableStateOf("") }
     var selectedCategoryIndex by remember { mutableIntStateOf(0) } // 0: All, 1: PDF, 2: Books, 3: Favorites, 4: Offline
@@ -138,7 +149,7 @@ fun LibraryScreen(
                 .background(
                     Brush.verticalGradient(
                         listOf(
-                            Color(0xFFE0F2FE).copy(alpha = 0.45f),
+                            if (isDark) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f) else Color(0xFFE0F2FE).copy(alpha = 0.45f),
                             MaterialTheme.colorScheme.background
                         ),
                         startY = 0f,
@@ -190,14 +201,27 @@ fun LibraryScreen(
                             }
                         }
 
-                        // App Logo (from user's uploaded icon)
-                        Image(
-                            painter = painterResource(id = R.drawable.img_app_logo),
-                            contentDescription = "Tome Logo",
-                            modifier = Modifier
-                                .size(46.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(
+                                onClick = { viewModel.toggleDarkTheme() },
+                                modifier = Modifier.testTag("library_dark_theme_toggle")
+                            ) {
+                                Icon(
+                                    imageVector = if (isDark) Icons.Default.LightMode else Icons.Default.DarkMode,
+                                    contentDescription = if (isDark) "Switch to Light Mode" else "Switch to Dark Mode",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(4.dp))
+                            // App Logo (from user's uploaded icon)
+                            Image(
+                                painter = painterResource(id = R.drawable.img_app_logo),
+                                contentDescription = "Tome Logo",
+                                modifier = Modifier
+                                    .size(46.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                            )
+                        }
                     }
                 }
 

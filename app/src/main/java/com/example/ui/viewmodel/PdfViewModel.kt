@@ -12,6 +12,7 @@ import com.example.data.model.CloudFile
 import com.example.data.model.DocumentEntity
 import com.example.data.model.PageElementEntity
 import com.example.data.model.ReadingTheme
+import com.example.data.model.ThemeMode
 import com.example.data.model.SyncLogEntity
 import com.example.data.repository.CloudSyncRepository
 import com.example.data.repository.PdfRepository
@@ -918,6 +919,36 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
     private val readerPrefs = application.getSharedPreferences("tome_reader_prefs", android.content.Context.MODE_PRIVATE)
     private val _isPageFlipEnabled = MutableStateFlow(readerPrefs.getBoolean("pref_page_flip_enabled", true))
     val isPageFlipEnabled: StateFlow<Boolean> = _isPageFlipEnabled.asStateFlow()
+
+    // System-wide Dark Theme mode (System Default, Light Mode, Dark Theme)
+    private val _themeMode = MutableStateFlow(
+        try {
+            val savedMode = readerPrefs.getString("pref_app_theme_mode", ThemeMode.SYSTEM.name) ?: ThemeMode.SYSTEM.name
+            ThemeMode.valueOf(savedMode)
+        } catch (_: Exception) {
+            ThemeMode.SYSTEM
+        }
+    )
+    val themeMode: StateFlow<ThemeMode> = _themeMode.asStateFlow()
+
+    fun setThemeMode(mode: ThemeMode) {
+        _themeMode.value = mode
+        readerPrefs.edit().putString("pref_app_theme_mode", mode.name).apply()
+        _statusMessage.value = when (mode) {
+            ThemeMode.SYSTEM -> "Theme: Follow System"
+            ThemeMode.LIGHT -> "Theme: Light Mode"
+            ThemeMode.DARK -> "Theme: Dark Mode (Low Light)"
+        }
+    }
+
+    fun toggleDarkTheme() {
+        val nextMode = when (_themeMode.value) {
+            ThemeMode.DARK -> ThemeMode.LIGHT
+            ThemeMode.LIGHT -> ThemeMode.DARK
+            ThemeMode.SYSTEM -> ThemeMode.DARK
+        }
+        setThemeMode(nextMode)
+    }
 
     private val _lastPageTurnDelta = MutableStateFlow(1) // +1 for next, -1 for prev
     val lastPageTurnDelta: StateFlow<Int> = _lastPageTurnDelta.asStateFlow()
