@@ -18,6 +18,8 @@ import com.example.data.repository.CloudSyncRepository
 import com.example.data.repository.PdfRepository
 import com.example.engine.PdfEngine
 import com.example.engine.SearchMatch
+import com.example.util.AmbientLightLevel
+import com.example.util.LightSensorManager
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -49,6 +51,9 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
 
     // Data flows
     val libraryDocuments: StateFlow<List<DocumentEntity>> = repository.allDocuments
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val recentDocuments: StateFlow<List<DocumentEntity>> = repository.recentDocuments
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val offlineDocuments: StateFlow<List<DocumentEntity>> = repository.offlineDocuments
@@ -191,6 +196,105 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
     private val _isReadingSessionSheetOpen = MutableStateFlow(false)
     val isReadingSessionSheetOpen: StateFlow<Boolean> = _isReadingSessionSheetOpen.asStateFlow()
 
+    // Page flip animation preference & direction
+    private val readerPrefs = application.getSharedPreferences("tome_reader_prefs", android.content.Context.MODE_PRIVATE)
+    private val _isPageFlipEnabled = MutableStateFlow(readerPrefs.getBoolean("pref_page_flip_enabled", true))
+    val isPageFlipEnabled: StateFlow<Boolean> = _isPageFlipEnabled.asStateFlow()
+
+    // System-wide Dark Theme mode (System Default, Light Mode, Dark Theme)
+    private val _themeMode = MutableStateFlow(
+        try {
+            val savedMode = readerPrefs.getString("pref_app_theme_mode", ThemeMode.SYSTEM.name) ?: ThemeMode.SYSTEM.name
+            ThemeMode.valueOf(savedMode)
+        } catch (_: Exception) {
+            ThemeMode.SYSTEM
+        }
+    )
+    val themeMode: StateFlow<ThemeMode> = _themeMode.asStateFlow()
+
+    fun setThemeMode(mode: ThemeMode) {
+        _themeMode.value = mode
+        readerPrefs.edit().putString("pref_app_theme_mode", mode.name).apply()
+        _statusMessage.value = when (mode) {
+            ThemeMode.SYSTEM -> "Theme: Follow System"
+            ThemeMode.LIGHT -> "Theme: Light Mode"
+            ThemeMode.DARK -> "Theme: Dark Mode (Low Light)"
+        }
+    }
+
+    fun toggleDarkTheme() {
+        val nextMode = when (_themeMode.value) {
+            ThemeMode.DARK -> ThemeMode.LIGHT
+            ThemeMode.LIGHT -> ThemeMode.DARK
+            ThemeMode.SYSTEM -> ThemeMode.DARK
+        }
+        setThemeMode(nextMode)
+    }
+
+    // =========================================================================
+    // SYSTEM LIGHT SENSOR & AUTO-BRIGHTNESS ADJUSTMENT
+    // =========================================================================
+    val lightSensorManager = LightSensorManager(application)
+
+    private val _isAutoBrightnessEnabled = MutableStateFlow(readerPrefs.getBoolean("pref_auto_brightness_enabled", true))
+    val isAutoBrightnessEnabled: StateFlow<Boolean> = _isAutoBrightnessEnabled.asStateFlow()
+
+    private val _manualBrightness = MutableStateFlow(readerPrefs.getFloat("pref_manual_brightness", 0.65f))
+    val manualBrightness: StateFlow<Float> = _manualBrightness.asStateFlow()
+
+    private val _autoComplementDarkTheme = MutableStateFlow(readerPrefs.getBoolean("pref_auto_complement_dark_theme", true))
+    val autoComplementDarkTheme: StateFlow<Boolean> = _autoComplementDarkTheme.asStateFlow()
+
+    val currentLux: StateFlow<Float> = lightSensorManager.currentLux
+    val ambientLightLevel: StateFlow<AmbientLightLevel> = lightSensorManager.ambientLightLevel
+    val isLightSensorAvailable: Boolean = lightSensorManager.isSensorAvailable
+
+    private val _currentAppBrightness = MutableStateFlow(
+        if (readerPrefs.getBoolean("pref_auto_brightness_enabled", true))
+            lightSensorManager.calculatedBrightness.value
+        else
+            readerPrefs.getFloat("pref_manual_brightness", 0.65f)
+    )
+    val currentAppBrightness: StateFlow<Float> = _currentAppBrightness.asStateFlow()
+
+    fun setAutoBrightnessEnabled(enabled: Boolean) {
+        _isAutoBrightnessEnabled.value = enabled
+        readerPrefs.edit().putBoolean("pref_auto_brightness_enabled", enabled).apply()
+        if (enabled) {
+            lightSensorManager.startListening()
+            _currentAppBrightness.value = lightSensorManager.calculatedBrightness.value
+            _statusMessage.value = "Auto-brightness: ON (Light sensor active)"
+        } else {
+            lightSensorManager.stopListening()
+            _currentAppBrightness.value = _manualBrightness.value
+            _statusMessage.value = "Auto-brightness: OFF (Manual control)"
+        }
+    }
+
+    fun setManualBrightness(brightness: Float) {
+        val clamped = brightness.coerceIn(0.08f, 1.0f)
+        _manualBrightness.value = clamped
+        readerPrefs.edit().putFloat("pref_manual_brightness", clamped).apply()
+        if (!_isAutoBrightnessEnabled.value) {
+            _currentAppBrightness.value = clamped
+        }
+    }
+
+    fun setAutoComplementDarkTheme(enabled: Boolean) {
+        _autoComplementDarkTheme.value = enabled
+        readerPrefs.edit().putBoolean("pref_auto_complement_dark_theme", enabled).apply()
+        _statusMessage.value = if (enabled) "Auto-complement Dark Theme enabled" else "Auto-complement Dark Theme disabled"
+    }
+
+    fun simulateLightSensorLux(lux: Float?) {
+        lightSensorManager.setSimulatedLux(lux)
+        if (lux != null) {
+            _statusMessage.value = "Simulated Light: ${lux.toInt()} lux"
+        } else {
+            _statusMessage.value = "Light Sensor: Real hardware mode"
+        }
+    }
+
     init {
         viewModelScope.launch {
             repository.initializeSamplesIfNeeded(pdfEngine)
@@ -198,6 +302,32 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             delay(1500)
             appUpdateManager.checkForUpdates(forceCheck = false)
+        }
+
+        // Initialize light sensor and auto-brightness reactive loop
+        if (_isAutoBrightnessEnabled.value) {
+            lightSensorManager.startListening()
+        }
+
+        viewModelScope.launch {
+            lightSensorManager.calculatedBrightness.collect { targetBrightness ->
+                if (_isAutoBrightnessEnabled.value) {
+                    _currentAppBrightness.value = targetBrightness
+                }
+            }
+        }
+
+        viewModelScope.launch {
+            lightSensorManager.ambientLightLevel.collect { level ->
+                if (_isAutoBrightnessEnabled.value && _autoComplementDarkTheme.value) {
+                    if (level == AmbientLightLevel.DARK) {
+                        // In low ambient light (<15 lux), ensure dark theme is active to prevent eye fatigue
+                        if (_themeMode.value == ThemeMode.SYSTEM || _themeMode.value == ThemeMode.LIGHT) {
+                            _themeMode.value = ThemeMode.DARK
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -220,6 +350,8 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
             _sessionDurationSeconds.value = 0L
             _isSessionTimerRunning.value = true
             unpersistedSessionSeconds = 0L
+
+            repository.updateLastReadTimestamp(doc.id, System.currentTimeMillis())
 
             goToPage(targetPage.coerceIn(0, (_totalPages.value - 1).coerceAtLeast(0)))
 
@@ -920,41 +1052,6 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
         return geminiChatService.translateText(text, targetLanguage, sourceLanguage)
     }
 
-    // Page flip animation preference & direction
-    private val readerPrefs = application.getSharedPreferences("tome_reader_prefs", android.content.Context.MODE_PRIVATE)
-    private val _isPageFlipEnabled = MutableStateFlow(readerPrefs.getBoolean("pref_page_flip_enabled", true))
-    val isPageFlipEnabled: StateFlow<Boolean> = _isPageFlipEnabled.asStateFlow()
-
-    // System-wide Dark Theme mode (System Default, Light Mode, Dark Theme)
-    private val _themeMode = MutableStateFlow(
-        try {
-            val savedMode = readerPrefs.getString("pref_app_theme_mode", ThemeMode.SYSTEM.name) ?: ThemeMode.SYSTEM.name
-            ThemeMode.valueOf(savedMode)
-        } catch (_: Exception) {
-            ThemeMode.SYSTEM
-        }
-    )
-    val themeMode: StateFlow<ThemeMode> = _themeMode.asStateFlow()
-
-    fun setThemeMode(mode: ThemeMode) {
-        _themeMode.value = mode
-        readerPrefs.edit().putString("pref_app_theme_mode", mode.name).apply()
-        _statusMessage.value = when (mode) {
-            ThemeMode.SYSTEM -> "Theme: Follow System"
-            ThemeMode.LIGHT -> "Theme: Light Mode"
-            ThemeMode.DARK -> "Theme: Dark Mode (Low Light)"
-        }
-    }
-
-    fun toggleDarkTheme() {
-        val nextMode = when (_themeMode.value) {
-            ThemeMode.DARK -> ThemeMode.LIGHT
-            ThemeMode.LIGHT -> ThemeMode.DARK
-            ThemeMode.SYSTEM -> ThemeMode.DARK
-        }
-        setThemeMode(nextMode)
-    }
-
     private val _lastPageTurnDelta = MutableStateFlow(1) // +1 for next, -1 for prev
     val lastPageTurnDelta: StateFlow<Int> = _lastPageTurnDelta.asStateFlow()
 
@@ -1151,6 +1248,7 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
 
     override fun onCleared() {
         super.onCleared()
+        lightSensorManager.stopListening()
         voiceReaderEngine.shutdown()
         pdfEngine.close()
     }

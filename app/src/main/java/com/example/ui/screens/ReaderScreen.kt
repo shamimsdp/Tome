@@ -106,6 +106,7 @@ fun ReaderScreen(
     // Page flip animation state
     val isPageFlipEnabled by viewModel.isPageFlipEnabled.collectAsState()
     val lastPageTurnDelta by viewModel.lastPageTurnDelta.collectAsState()
+    val isAutoBrightnessEnabled by viewModel.isAutoBrightnessEnabled.collectAsState()
 
     // Search state
     val isSearchOpen by viewModel.searchResults.collectAsState()
@@ -267,7 +268,9 @@ fun ReaderScreen(
                     onOpenSessionTimer = { viewModel.openReadingSessionSheet() },
                     onSelectTheme = { theme -> viewModel.setReadingTheme(theme) },
                     isDarkTheme = isDarkTheme,
-                    onToggleDarkTheme = { viewModel.toggleDarkTheme() }
+                    onToggleDarkTheme = { viewModel.toggleDarkTheme() },
+                    isAutoBrightnessEnabled = isAutoBrightnessEnabled,
+                    onToggleAutoBrightness = { viewModel.setAutoBrightnessEnabled(!isAutoBrightnessEnabled) }
                 )
             }
 

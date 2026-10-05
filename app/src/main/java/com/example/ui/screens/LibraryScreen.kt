@@ -39,6 +39,7 @@ import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.FileOpen
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Headphones
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Search
@@ -91,6 +92,7 @@ fun LibraryScreen(
     onOpenDocument: (DocumentEntity) -> Unit
 ) {
     val documents by viewModel.libraryDocuments.collectAsState()
+    val recentDocuments by viewModel.recentDocuments.collectAsState()
     val isOfflineMode by viewModel.isOfflineModeOnly.collectAsState()
     val latestRelease by viewModel.latestRelease.collectAsState()
     val downloadState by viewModel.updateDownloadState.collectAsState()
@@ -103,7 +105,7 @@ fun LibraryScreen(
     }
 
     var searchQuery by remember { mutableStateOf("") }
-    var selectedCategoryIndex by remember { mutableIntStateOf(0) } // 0: All, 1: PDF, 2: Books, 3: Favorites, 4: Offline
+    var selectedCategoryIndex by remember { mutableIntStateOf(0) } // 0: All, 1: Recents (top 5), 2: PDF, 3: Books, 4: Favorites, 5: Offline
 
     val openPdfLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -112,19 +114,29 @@ fun LibraryScreen(
     }
 
     // Filter documents based on category and search query
-    val filteredDocuments = documents.filter { doc ->
-        val matchesCategory = when (selectedCategoryIndex) {
-            1 -> doc.filePath.endsWith(".pdf", ignoreCase = true)
-            2 -> doc.sourceType == DocumentEntity.SOURCE_BUILT_IN
-            3 -> doc.isFavorite
-            4 -> doc.isOfflineAvailable
-            else -> true
+    val filteredDocuments = when (selectedCategoryIndex) {
+        1 -> {
+            val list = if (recentDocuments.isNotEmpty()) recentDocuments else documents.sortedByDescending { it.lastReadTimestamp }
+            list.take(5).filter { doc ->
+                searchQuery.isBlank() ||
+                        doc.title.contains(searchQuery, ignoreCase = true) ||
+                        doc.author.contains(searchQuery, ignoreCase = true)
+            }
         }
-        val matchesSearch = searchQuery.isBlank() ||
-                doc.title.contains(searchQuery, ignoreCase = true) ||
-                doc.author.contains(searchQuery, ignoreCase = true)
+        else -> documents.filter { doc ->
+            val matchesCategory = when (selectedCategoryIndex) {
+                2 -> doc.filePath.endsWith(".pdf", ignoreCase = true)
+                3 -> doc.sourceType == DocumentEntity.SOURCE_BUILT_IN
+                4 -> doc.isFavorite
+                5 -> doc.isOfflineAvailable
+                else -> true
+            }
+            val matchesSearch = searchQuery.isBlank() ||
+                    doc.title.contains(searchQuery, ignoreCase = true) ||
+                    doc.author.contains(searchQuery, ignoreCase = true)
 
-        matchesCategory && matchesSearch
+            matchesCategory && matchesSearch
+        }
     }
 
     val mostRecentDoc = documents.maxByOrNull { it.lastReadTimestamp }
@@ -252,6 +264,7 @@ fun LibraryScreen(
                 item {
                     val categories = listOf(
                         CategoryPillData("All", Icons.Default.Folder, Color(0xFFF59E0B)),
+                        CategoryPillData("Recent", Icons.Default.History, Color(0xFF8B5CF6)),
                         CategoryPillData("PDF", Icons.Default.PictureAsPdf, Color(0xFFEF4444)),
                         CategoryPillData("Books", Icons.AutoMirrored.Filled.MenuBook, Color(0xFF3B82F6)),
                         CategoryPillData("Favorites", Icons.Default.Favorite, Color(0xFFEC4899)),

@@ -13,6 +13,9 @@ interface DocumentDao {
     @Query("SELECT * FROM documents ORDER BY lastReadTimestamp DESC")
     fun getAllDocuments(): Flow<List<DocumentEntity>>
 
+    @Query("SELECT * FROM documents ORDER BY lastReadTimestamp DESC LIMIT 5")
+    fun getRecentDocuments(): Flow<List<DocumentEntity>>
+
     @Query("SELECT * FROM documents WHERE isOfflineAvailable = 1 ORDER BY lastReadTimestamp DESC")
     fun getOfflineDocuments(): Flow<List<DocumentEntity>>
 
@@ -33,6 +36,9 @@ interface DocumentDao {
 
     @Query("UPDATE documents SET currentPage = :page, progressPercent = :percent, lastReadTimestamp = :timestamp WHERE id = :id")
     suspend fun updateProgress(id: String, page: Int, percent: Float, timestamp: Long)
+
+    @Query("UPDATE documents SET lastReadTimestamp = :timestamp WHERE id = :id")
+    suspend fun updateLastReadTimestamp(id: String, timestamp: Long)
 
     @Query("UPDATE documents SET totalReadingTimeSeconds = totalReadingTimeSeconds + :additionalSeconds, lastReadTimestamp = :timestamp WHERE id = :id")
     suspend fun incrementReadingTime(id: String, additionalSeconds: Long, timestamp: Long)

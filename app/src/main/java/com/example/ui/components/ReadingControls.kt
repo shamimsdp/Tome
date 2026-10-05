@@ -29,6 +29,8 @@ import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Bookmarks
+import androidx.compose.material.icons.filled.Brightness6
+import androidx.compose.material.icons.filled.BrightnessAuto
 import androidx.compose.material.icons.filled.CollectionsBookmark
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.LightMode
@@ -103,6 +105,8 @@ fun ReadingTopBar(
     onSelectTheme: (ReadingTheme) -> Unit,
     isDarkTheme: Boolean = false,
     onToggleDarkTheme: () -> Unit = {},
+    isAutoBrightnessEnabled: Boolean = false,
+    onToggleAutoBrightness: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var themeMenuExpanded by remember { mutableStateOf(false) }
@@ -339,6 +343,18 @@ fun ReadingTopBar(
                         imageVector = if (isDarkTheme) Icons.Default.LightMode else Icons.Default.DarkMode,
                         contentDescription = if (isDarkTheme) "Switch to Light Theme" else "Switch to Dark Theme (Low Light)",
                         tint = if (isDarkTheme) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                    )
+                }
+
+                // Auto-Brightness (Light Sensor) quick toggle
+                IconButton(
+                    onClick = onToggleAutoBrightness,
+                    modifier = Modifier.testTag("reader_auto_brightness_toggle")
+                ) {
+                    Icon(
+                        imageVector = if (isAutoBrightnessEnabled) Icons.Default.BrightnessAuto else Icons.Default.Brightness6,
+                        contentDescription = if (isAutoBrightnessEnabled) "Auto-Brightness (Light Sensor): ON" else "Auto-Brightness: OFF",
+                        tint = if (isAutoBrightnessEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
 

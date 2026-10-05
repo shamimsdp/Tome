@@ -31,6 +31,7 @@ class PdfRepository(
     private val pageElementDao: PageElementDao
 ) {
     val allDocuments: Flow<List<DocumentEntity>> = documentDao.getAllDocuments()
+    val recentDocuments: Flow<List<DocumentEntity>> = documentDao.getRecentDocuments()
     val offlineDocuments: Flow<List<DocumentEntity>> = documentDao.getOfflineDocuments()
     val allBookmarks: Flow<List<BookmarkEntity>> = bookmarkDao.getAllBookmarks()
     val allAnnotations: Flow<List<AnnotationEntity>> = annotationDao.getAllAnnotations()
@@ -197,6 +198,10 @@ class PdfRepository(
     suspend fun updateReadingProgress(docId: String, page: Int, totalPages: Int) {
         val percent = if (totalPages > 0) ((page + 1).toFloat() / totalPages.toFloat()) * 100f else 0f
         documentDao.updateProgress(docId, page, percent, System.currentTimeMillis())
+    }
+
+    suspend fun updateLastReadTimestamp(docId: String, timestamp: Long = System.currentTimeMillis()) {
+        documentDao.updateLastReadTimestamp(docId, timestamp)
     }
 
     suspend fun incrementReadingTime(docId: String, additionalSeconds: Long) {

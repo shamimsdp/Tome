@@ -22,6 +22,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Brightness6
+import androidx.compose.material.icons.filled.BrightnessAuto
 import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.DarkMode
@@ -31,9 +32,11 @@ import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.NewReleases
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material.icons.filled.WifiOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -44,10 +47,13 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -95,6 +101,13 @@ fun SyncSettingsScreen(
     val isCheckingForUpdates by viewModel.isCheckingForUpdates.collectAsState()
     val updateCheckStatusMessage by viewModel.updateCheckStatusMessage.collectAsState()
     val userEmail by viewModel.userEmail.collectAsState()
+    val isAutoBrightnessEnabled by viewModel.isAutoBrightnessEnabled.collectAsState()
+    val currentLux by viewModel.currentLux.collectAsState()
+    val currentAppBrightness by viewModel.currentAppBrightness.collectAsState()
+    val ambientLevel by viewModel.ambientLightLevel.collectAsState()
+    val manualBrightness by viewModel.manualBrightness.collectAsState()
+    val autoComplementDarkTheme by viewModel.autoComplementDarkTheme.collectAsState()
+    val isLightSensorAvailable = viewModel.isLightSensorAvailable
 
     var showUpdateDialog by remember { mutableStateOf(false) }
     var showRepoEditDialog by remember { mutableStateOf(false) }
@@ -399,6 +412,306 @@ fun SyncSettingsScreen(
                                         )
                                     }
                                 }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // System Light Sensor & Auto-Brightness Adjustment Setting
+            item {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("light_sensor_auto_brightness_card"),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+                    )
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.BrightnessAuto,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column {
+                                    Text(
+                                        text = "Auto-Brightness (Light Sensor)",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = "Dynamically adjusts screen brightness and complements dark theme based on ambient light sensor",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+
+                            Switch(
+                                checked = isAutoBrightnessEnabled,
+                                onCheckedChange = { viewModel.setAutoBrightnessEnabled(it) },
+                                modifier = Modifier.testTag("auto_brightness_toggle")
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        // Live Sensor Readout Card
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.surface,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = Icons.Default.Sensors,
+                                            contentDescription = null,
+                                            tint = if (isAutoBrightnessEnabled) Color(0xFF10B981) else Color.Gray,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = if (isAutoBrightnessEnabled) "Sensor Active • ${currentLux.toInt()} lux" else "Sensor Paused • Manual Mode",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
+
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = when (ambientLevel) {
+                                            com.example.util.AmbientLightLevel.DARK -> Color(0xFF1E293B)
+                                            com.example.util.AmbientLightLevel.DIM -> Color(0xFFFEF3C7)
+                                            com.example.util.AmbientLightLevel.NORMAL -> Color(0xFFE0F2FE)
+                                            com.example.util.AmbientLightLevel.BRIGHT -> Color(0xFFDCFCE7)
+                                        }
+                                    ) {
+                                        Text(
+                                            text = ambientLevel.label,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = when (ambientLevel) {
+                                                com.example.util.AmbientLightLevel.DARK -> Color(0xFF94A3B8)
+                                                com.example.util.AmbientLightLevel.DIM -> Color(0xFFB45309)
+                                                com.example.util.AmbientLightLevel.NORMAL -> Color(0xFF0369A1)
+                                                com.example.util.AmbientLightLevel.BRIGHT -> Color(0xFF15803D)
+                                            },
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                        )
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = ambientLevel.description,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+
+                                Spacer(modifier = Modifier.height(10.dp))
+
+                                // Live App Brightness Bar
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "Current App Brightness",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        text = "${(currentAppBrightness * 100).toInt()}%",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(6.dp))
+                                LinearProgressIndicator(
+                                    progress = { currentAppBrightness },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(6.dp),
+                                    color = MaterialTheme.colorScheme.primary,
+                                    trackColor = MaterialTheme.colorScheme.surfaceVariant
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // Complement Dark Theme setting row
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                                Text(
+                                    text = "Complement Dark Theme in Low Light",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    text = "Automatically switches to Dark Theme when room light drops below 15 lux for eye comfort",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+
+                            Switch(
+                                checked = autoComplementDarkTheme,
+                                onCheckedChange = { viewModel.setAutoComplementDarkTheme(it) },
+                                modifier = Modifier.testTag("complement_dark_theme_switch")
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // Manual Brightness Adjustment Slider
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = if (isAutoBrightnessEnabled) "Manual Override / Preview" else "Manual Brightness Level",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    text = "${((if (isAutoBrightnessEnabled) currentAppBrightness else manualBrightness) * 100).toInt()}%",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.DarkMode,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Slider(
+                                    value = if (isAutoBrightnessEnabled) currentAppBrightness else manualBrightness,
+                                    onValueChange = {
+                                        if (isAutoBrightnessEnabled) {
+                                            viewModel.setAutoBrightnessEnabled(false)
+                                        }
+                                        viewModel.setManualBrightness(it)
+                                    },
+                                    valueRange = 0.08f..1.0f,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .padding(horizontal = 8.dp)
+                                        .testTag("manual_brightness_slider")
+                                )
+                                Icon(
+                                    imageVector = Icons.Default.WbSunny,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+
+                        // Simulation / Demo condition chips
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Simulate Environment (Testing & Calibration)",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = MaterialTheme.colorScheme.surface,
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                                modifier = Modifier
+                                    .clickable { viewModel.simulateLightSensorLux(5f) }
+                                    .testTag("simulate_night_lux")
+                            ) {
+                                Text(
+                                    text = "🌙 Night (5 lx)",
+                                    fontSize = 11.sp,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = MaterialTheme.colorScheme.surface,
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                                modifier = Modifier
+                                    .clickable { viewModel.simulateLightSensorLux(120f) }
+                                    .testTag("simulate_indoor_lux")
+                            ) {
+                                Text(
+                                    text = "🛋 Indoor (120 lx)",
+                                    fontSize = 11.sp,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = MaterialTheme.colorScheme.surface,
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                                modifier = Modifier
+                                    .clickable { viewModel.simulateLightSensorLux(1500f) }
+                                    .testTag("simulate_daylight_lux")
+                            ) {
+                                Text(
+                                    text = "☀️ Sun (1.5k lx)",
+                                    fontSize = 11.sp,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = MaterialTheme.colorScheme.primaryContainer,
+                                modifier = Modifier
+                                    .clickable { viewModel.simulateLightSensorLux(null) }
+                                    .testTag("reset_hardware_sensor")
+                            ) {
+                                Text(
+                                    text = "Sensor",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
                             }
                         }
                     }

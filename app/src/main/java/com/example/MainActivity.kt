@@ -33,7 +33,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import com.example.data.model.ReadingTheme
 import com.example.data.model.ThemeMode
+import androidx.compose.material.icons.filled.History
 import com.example.ui.screens.AllNotesScreen
+import com.example.ui.screens.RecentFilesScreen
 import com.example.ui.screens.CloudScreen
 import com.example.ui.screens.LibraryScreen
 import com.example.ui.screens.ReaderScreen
@@ -65,6 +67,15 @@ class MainActivity : ComponentActivity() {
         setContent {
             val themeMode by viewModel.themeMode.collectAsState()
             val currentReadingTheme by viewModel.readingTheme.collectAsState()
+            val currentBrightness by viewModel.currentAppBrightness.collectAsState()
+
+            LaunchedEffect(currentBrightness) {
+                val window = this@MainActivity.window
+                val layoutParams = window.attributes
+                layoutParams.screenBrightness = currentBrightness.coerceIn(0.05f, 1.0f)
+                window.attributes = layoutParams
+            }
+
             val systemInDark = isSystemInDarkTheme()
             val isDarkTheme = when (themeMode) {
                 ThemeMode.SYSTEM -> systemInDark
@@ -115,29 +126,36 @@ fun MainAppContent(viewModel: PdfViewModel) {
                     NavigationBarItem(
                         selected = selectedTab == 1,
                         onClick = { selectedTab = 1 },
+                        icon = { Icon(imageVector = Icons.Default.History, contentDescription = null) },
+                        label = { Text("Recents") },
+                        modifier = Modifier.testTag("nav_recent_files")
+                    )
+                    NavigationBarItem(
+                        selected = selectedTab == 2,
+                        onClick = { selectedTab = 2 },
                         icon = { Icon(imageVector = Icons.Default.Cloud, contentDescription = null) },
                         label = { Text("Cloud") },
                         modifier = Modifier.testTag("nav_cloud")
                     )
                     NavigationBarItem(
-                        selected = selectedTab == 2,
-                        onClick = { selectedTab = 2 },
+                        selected = selectedTab == 3,
+                        onClick = { selectedTab = 3 },
                         icon = { Icon(imageVector = Icons.Default.EditNote, contentDescription = null) },
                         label = { Text("Notes") },
                         modifier = Modifier.testTag("nav_notes")
                     )
                     NavigationBarItem(
-                        selected = selectedTab == 3,
-                        onClick = { selectedTab = 3 },
+                        selected = selectedTab == 4,
+                        onClick = { selectedTab = 4 },
                         icon = { Icon(imageVector = Icons.Default.AutoAwesome, contentDescription = null) },
                         label = { Text("AI Chat") },
                         modifier = Modifier.testTag("nav_ai_chat")
                     )
                     NavigationBarItem(
-                        selected = selectedTab == 4,
-                        onClick = { selectedTab = 4 },
+                        selected = selectedTab == 5,
+                        onClick = { selectedTab = 5 },
                         icon = { Icon(imageVector = Icons.Default.Settings, contentDescription = null) },
-                        label = { Text("Sync") },
+                        label = { Text("Settings") },
                         modifier = Modifier.testTag("nav_sync")
                     )
                 }
@@ -156,10 +174,14 @@ fun MainAppContent(viewModel: PdfViewModel) {
                         viewModel = viewModel,
                         onOpenDocument = { /* Document opened inside viewModel */ }
                     )
-                    1 -> CloudScreen(viewModel = viewModel)
-                    2 -> AllNotesScreen(viewModel = viewModel)
-                    3 -> com.example.ui.screens.ChatScreen(viewModel = viewModel)
-                    4 -> SyncSettingsScreen(viewModel = viewModel)
+                    1 -> RecentFilesScreen(
+                        viewModel = viewModel,
+                        onOpenDocument = { /* Document opened inside viewModel */ }
+                    )
+                    2 -> CloudScreen(viewModel = viewModel)
+                    3 -> AllNotesScreen(viewModel = viewModel)
+                    4 -> com.example.ui.screens.ChatScreen(viewModel = viewModel)
+                    5 -> SyncSettingsScreen(viewModel = viewModel)
                 }
             }
         }
