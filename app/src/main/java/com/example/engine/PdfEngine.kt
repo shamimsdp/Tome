@@ -93,6 +93,7 @@ class PdfEngine {
         bitmapCache.get(cacheKey)?.let { return@withContext it }
 
         mutex.withLock {
+            bitmapCache.get(cacheKey)?.let { return@withContext it }
             val r = renderer ?: return@withContext null
             if (pageIndex < 0 || pageIndex >= r.pageCount) return@withContext null
 

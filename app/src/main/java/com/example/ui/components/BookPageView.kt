@@ -50,6 +50,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -133,6 +134,8 @@ fun BookPageView(
     val flipProgress = remember { Animatable(0f) }
     var isFlipping by remember { mutableStateOf(false) }
     var flipDirection by remember { mutableStateOf(FlipDirection.NEXT) }
+    var flipSourcePage by remember { mutableIntStateOf(pageIndex) }
+    var flipTargetPage by remember { mutableIntStateOf(pageIndex) }
 
     // Pinch-to-zoom & Pan state
     var zoomScale by remember { mutableFloatStateOf(1.0f) }
@@ -155,43 +158,28 @@ fun BookPageView(
         panOffset = Offset.Zero
     }
 
-    // Target page waiting to be acknowledged by the ViewModel
-    var pendingTargetPage by remember { mutableStateOf<Int?>(null) }
-
-    // Persistent in-memory bitmap cache for seamless instant page switching
-    val localBitmapCache = remember { mutableMapOf<Int, Bitmap>() }
-
-    // Update local cache whenever bitmap or pageIndex updates
-    if (bitmap != null) {
-        localBitmapCache[pageIndex] = bitmap
-    }
-    pdfEngine.getCachedBitmap(pageIndex)?.let {
-        localBitmapCache[pageIndex] = it
-    }
-
-    // Synchronize flip completion with ViewModel's pageIndex emission
-    LaunchedEffect(pageIndex) {
-        if (pendingTargetPage != null && pageIndex == pendingTargetPage) {
-            pendingTargetPage = null
-            flipProgress.snapTo(0f)
-            isFlipping = false
-        } else if (pendingTargetPage == null && !isFlipping) {
-            flipProgress.snapTo(0f)
-        }
-    }
-
-    // Proactively pre-render adjacent pages into memory so they are guaranteed ready
+    // Proactively pre-render adjacent pages into memory so they are guaranteed ready for flip
     LaunchedEffect(pageIndex, totalPages) {
         val nextIdx = pageIndex + 1
-        if (nextIdx < totalPages && !localBitmapCache.containsKey(nextIdx)) {
-            val b = pdfEngine.getCachedBitmap(nextIdx) ?: pdfEngine.renderPage(nextIdx)
-            if (b != null) localBitmapCache[nextIdx] = b
+        if (nextIdx < totalPages && !pdfEngine.isPageCached(nextIdx)) {
+            pdfEngine.renderPage(nextIdx)
         }
         val prevIdx = pageIndex - 1
-        if (prevIdx >= 0 && !localBitmapCache.containsKey(prevIdx)) {
-            val b = pdfEngine.getCachedBitmap(prevIdx) ?: pdfEngine.renderPage(prevIdx)
-            if (b != null) localBitmapCache[prevIdx] = b
+        if (prevIdx >= 0 && !pdfEngine.isPageCached(prevIdx)) {
+            pdfEngine.renderPage(prevIdx)
         }
+        val nextNextIdx = pageIndex + 2
+        if (nextNextIdx < totalPages && !pdfEngine.isPageCached(nextNextIdx)) {
+            pdfEngine.renderPage(nextNextIdx)
+        }
+    }
+
+    // Direct cache query: never substitute an incorrect page's bitmap
+    fun getPageBitmap(p: Int): Bitmap? {
+        val cached = pdfEngine.getCachedBitmap(p)
+        if (cached != null) return cached
+        if (p == pageIndex && bitmap != null) return bitmap
+        return null
     }
 
     val pageBackground = when {
@@ -224,18 +212,16 @@ fun BookPageView(
             // =========================================================================
             // 1. BASE LAYER (ALWAYS MOUNTED & PERSISTENT — ZERO RE-ALLOCATION FLICKER)
             // =========================================================================
-            // During flip next: Base layer displays next page (pageIndex + 1).
-            // When flip completes: Base layer continues displaying that page as active.
-            // During flip prev: Base layer displays current page (pageIndex).
+            // During flip next: Base layer displays target page (pageIndex + 1).
+            // During flip prev: Base layer displays current source page (pageIndex).
             // At resting: Base layer displays current page (pageIndex).
             val basePage = when {
-                isFlipping && flipDirection == FlipDirection.NEXT && pageIndex + 1 < totalPages -> pageIndex + 1
+                isFlipping && flipDirection == FlipDirection.NEXT -> flipTargetPage
+                isFlipping && flipDirection == FlipDirection.PREV -> flipSourcePage
                 else -> pageIndex
             }
 
-            val baseBitmap = localBitmapCache[basePage]
-                ?: pdfEngine.getCachedBitmap(basePage)
-                ?: if (basePage == pageIndex) bitmap else null
+            val baseBitmap = getPageBitmap(basePage)
 
             // Zoom & Pan Container for inspecting fine details
             Box(
@@ -252,15 +238,16 @@ fun BookPageView(
                 SinglePageSheet(
                     pageIndex = basePage,
                     renderedBitmap = baseBitmap,
+                    pdfEngine = pdfEngine,
                     readingTheme = readingTheme,
                     isDarkTheme = isDarkTheme,
                     isBookmarked = isBookmarked && basePage == pageIndex,
-                    annotations = annotations,
+                    annotations = if (basePage == pageIndex) annotations else emptyList(),
                     searchMatches = searchMatches,
                     containerHeight = containerHeight,
                     isReadingRulerEnabled = isReadingRulerEnabled && !isFlipping && zoomScale <= 1.05f,
                     readingRulerRatio = readingRulerRatio,
-                    pageElements = pageElements,
+                    pageElements = if (basePage == pageIndex) pageElements else emptyList(),
                     isEditElementsMode = isEditElementsMode && !isFlipping && zoomScale <= 1.05f,
                     onAnnotationClick = onAnnotationClick,
                     onRulerPositionChange = onRulerPositionChange,
@@ -308,10 +295,8 @@ fun BookPageView(
                 } else {
                     -180f * (1f - progress)
                 }
-                val turningPage = if (flipDirection == FlipDirection.NEXT) pageIndex else pageIndex - 1
-                val turningBitmap = localBitmapCache[turningPage]
-                    ?: pdfEngine.getCachedBitmap(turningPage)
-                    ?: if (turningPage == pageIndex) bitmap else null
+                val turningPage = if (flipDirection == FlipDirection.NEXT) flipSourcePage else flipTargetPage
+                val turningBitmap = getPageBitmap(turningPage)
                 val isFrontFace = rotationY >= -90f
 
                 Box(
@@ -328,13 +313,14 @@ fun BookPageView(
                         SinglePageSheet(
                             pageIndex = turningPage,
                             renderedBitmap = turningBitmap,
+                            pdfEngine = pdfEngine,
                             readingTheme = readingTheme,
                             isDarkTheme = isDarkTheme,
                             isBookmarked = isBookmarked && turningPage == pageIndex,
-                            annotations = annotations,
+                            annotations = if (turningPage == pageIndex) annotations else emptyList(),
                             searchMatches = searchMatches,
                             containerHeight = containerHeight,
-                            pageElements = pageElements,
+                            pageElements = if (turningPage == pageIndex) pageElements else emptyList(),
                             isEditElementsMode = false,
                             modifier = Modifier.fillMaxSize()
                         )
@@ -364,8 +350,10 @@ fun BookPageView(
                                 }
                         ) {
                             PageVersoSheet(
+                                pageIndex = turningPage,
                                 readingTheme = readingTheme,
                                 frontBitmap = turningBitmap,
+                                pdfEngine = pdfEngine,
                                 modifier = Modifier.fillMaxSize()
                             )
 
@@ -443,13 +431,17 @@ fun BookPageView(
 
                                         if (!isDrag && abs(totalDragX) > touchSlop) {
                                             isDrag = true
-                                            if (isPageFlipEnabled) {
+                                            if (isPageFlipEnabled && !isFlipping) {
                                                 if (totalDragX < 0 && pageIndex < totalPages - 1) {
-                                                    isFlipping = true
+                                                    flipSourcePage = pageIndex
+                                                    flipTargetPage = pageIndex + 1
                                                     flipDirection = FlipDirection.NEXT
-                                                } else if (totalDragX > 0 && pageIndex > 0) {
                                                     isFlipping = true
+                                                } else if (totalDragX > 0 && pageIndex > 0) {
+                                                    flipSourcePage = pageIndex
+                                                    flipTargetPage = pageIndex - 1
                                                     flipDirection = FlipDirection.PREV
+                                                    isFlipping = true
                                                 }
                                             }
                                         }
@@ -488,22 +480,13 @@ fun BookPageView(
                                                     )
                                                 )
 
-                                                val targetPage = if (flipDirection == FlipDirection.NEXT) pageIndex + 1 else pageIndex - 1
-                                                pendingTargetPage = targetPage
+                                                isFlipping = false
+                                                flipProgress.snapTo(0f)
 
                                                 if (flipDirection == FlipDirection.NEXT) {
                                                     onTapRight()
                                                 } else {
                                                     onTapLeft()
-                                                }
-
-                                                launch {
-                                                    delay(350)
-                                                    if (pendingTargetPage != null) {
-                                                        pendingTargetPage = null
-                                                        flipProgress.snapTo(0f)
-                                                        isFlipping = false
-                                                    }
                                                 }
                                             } else {
                                                 flipProgress.animateTo(
@@ -527,53 +510,43 @@ fun BookPageView(
                                             when {
                                                 xRatio < 0.25f -> {
                                                     // Left edge tap: Previous Page
-                                                    if (isPageFlipEnabled && pageIndex > 0) {
+                                                    if (isPageFlipEnabled && pageIndex > 0 && !isFlipping) {
                                                         coroutineScope.launch {
-                                                            isFlipping = true
+                                                            flipSourcePage = pageIndex
+                                                            flipTargetPage = pageIndex - 1
                                                             flipDirection = FlipDirection.PREV
-                                                            pendingTargetPage = pageIndex - 1
+                                                            isFlipping = true
                                                             flipProgress.snapTo(0f)
                                                             flipProgress.animateTo(
                                                                 targetValue = 1f,
-                                                                animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing)
+                                                                animationSpec = tween(durationMillis = 240, easing = FastOutSlowInEasing)
                                                             )
+                                                            isFlipping = false
+                                                            flipProgress.snapTo(0f)
                                                             onTapLeft()
-                                                            launch {
-                                                                delay(350)
-                                                                if (pendingTargetPage != null) {
-                                                                    pendingTargetPage = null
-                                                                    flipProgress.snapTo(0f)
-                                                                    isFlipping = false
-                                                                }
-                                                            }
                                                         }
-                                                    } else {
+                                                    } else if (!isFlipping) {
                                                         onTapLeft()
                                                     }
                                                 }
                                                 xRatio > 0.75f -> {
                                                     // Right edge tap: Next Page
-                                                    if (isPageFlipEnabled && pageIndex < totalPages - 1) {
+                                                    if (isPageFlipEnabled && pageIndex < totalPages - 1 && !isFlipping) {
                                                         coroutineScope.launch {
-                                                            isFlipping = true
+                                                            flipSourcePage = pageIndex
+                                                            flipTargetPage = pageIndex + 1
                                                             flipDirection = FlipDirection.NEXT
-                                                            pendingTargetPage = pageIndex + 1
+                                                            isFlipping = true
                                                             flipProgress.snapTo(0f)
                                                             flipProgress.animateTo(
                                                                 targetValue = 1f,
-                                                                animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing)
+                                                                animationSpec = tween(durationMillis = 240, easing = FastOutSlowInEasing)
                                                             )
+                                                            isFlipping = false
+                                                            flipProgress.snapTo(0f)
                                                             onTapRight()
-                                                            launch {
-                                                                delay(350)
-                                                                if (pendingTargetPage != null) {
-                                                                    pendingTargetPage = null
-                                                                    flipProgress.snapTo(0f)
-                                                                    isFlipping = false
-                                                                }
-                                                            }
                                                         }
-                                                    } else {
+                                                    } else if (!isFlipping) {
                                                         onTapRight()
                                                     }
                                                 }
@@ -691,6 +664,7 @@ fun BookPageView(
 private fun SinglePageSheet(
     pageIndex: Int,
     renderedBitmap: Bitmap?,
+    pdfEngine: PdfEngine,
     readingTheme: ReadingTheme,
     isDarkTheme: Boolean = false,
     isBookmarked: Boolean,
@@ -708,8 +682,28 @@ private fun SinglePageSheet(
     onEditElement: ((PageElementEntity) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
-    val imageBitmap = remember(renderedBitmap) {
-        renderedBitmap?.asImageBitmap()
+    var pageBitmap by remember(pageIndex, renderedBitmap) {
+        mutableStateOf(renderedBitmap ?: pdfEngine.getCachedBitmap(pageIndex))
+    }
+
+    LaunchedEffect(pageIndex, renderedBitmap) {
+        if (renderedBitmap != null) {
+            pageBitmap = renderedBitmap
+        } else {
+            val cached = pdfEngine.getCachedBitmap(pageIndex)
+            if (cached != null) {
+                pageBitmap = cached
+            } else {
+                val b = pdfEngine.renderPage(pageIndex)
+                if (b != null) {
+                    pageBitmap = b
+                }
+            }
+        }
+    }
+
+    val imageBitmap = remember(pageBitmap) {
+        pageBitmap?.asImageBitmap()
     }
 
     val pageColor = when {
@@ -993,12 +987,29 @@ private fun SinglePageSheet(
  */
 @Composable
 private fun PageVersoSheet(
+    pageIndex: Int,
     readingTheme: ReadingTheme,
     frontBitmap: Bitmap?,
+    pdfEngine: PdfEngine,
     modifier: Modifier = Modifier
 ) {
-    val versoImageBitmap = remember(frontBitmap) {
-        frontBitmap?.asImageBitmap()
+    var versoBitmap by remember(frontBitmap, pageIndex) {
+        mutableStateOf(frontBitmap ?: pdfEngine.getCachedBitmap(pageIndex))
+    }
+
+    LaunchedEffect(pageIndex, frontBitmap) {
+        if (frontBitmap != null) {
+            versoBitmap = frontBitmap
+        } else {
+            val cached = pdfEngine.getCachedBitmap(pageIndex) ?: pdfEngine.renderPage(pageIndex)
+            if (cached != null) {
+                versoBitmap = cached
+            }
+        }
+    }
+
+    val versoImageBitmap = remember(versoBitmap) {
+        versoBitmap?.asImageBitmap()
     }
 
     Surface(

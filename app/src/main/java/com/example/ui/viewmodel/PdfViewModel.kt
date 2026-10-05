@@ -372,10 +372,9 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
             _lastPageTurnDelta.value = if (clamped > _currentPageIndex.value) 1 else -1
         }
 
-        // Immediately update bitmap from cache if available to prevent animation flicker
-        pdfEngine.getCachedBitmap(clamped)?.let {
-            _currentPageBitmap.value = it
-        }
+        // Immediately update bitmap from cache if available; if not yet cached, set null so old page's bitmap never leaks
+        val cachedBitmap = pdfEngine.getCachedBitmap(clamped)
+        _currentPageBitmap.value = cachedBitmap
 
         _currentPageIndex.value = clamped
 
@@ -393,18 +392,24 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         viewModelScope.launch {
-            val bitmap = pdfEngine.renderPage(clamped)
+            val bitmap = cachedBitmap ?: pdfEngine.renderPage(clamped)
             if (bitmap != null && _currentPageIndex.value == clamped && _currentPageBitmap.value !== bitmap) {
                 _currentPageBitmap.value = bitmap
             }
             checkBookmarkStatus()
 
             // Pre-fetch adjacent pages into cache so next page turns are instantaneous
-            if (clamped + 1 < total) {
+            if (clamped + 1 < total && !pdfEngine.isPageCached(clamped + 1)) {
                 pdfEngine.renderPage(clamped + 1)
             }
-            if (clamped - 1 >= 0) {
+            if (clamped - 1 >= 0 && !pdfEngine.isPageCached(clamped - 1)) {
                 pdfEngine.renderPage(clamped - 1)
+            }
+            if (clamped + 2 < total && !pdfEngine.isPageCached(clamped + 2)) {
+                pdfEngine.renderPage(clamped + 2)
+            }
+            if (clamped - 2 >= 0 && !pdfEngine.isPageCached(clamped - 2)) {
+                pdfEngine.renderPage(clamped - 2)
             }
 
             _activeDocument.value?.let { doc ->
