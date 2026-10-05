@@ -19,6 +19,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculateCentroid
 import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -54,6 +55,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -101,6 +103,74 @@ enum class FlipDirection {
  * Eliminates all post-flip flickering by keeping the base page slot persistent in the layout tree,
  * preserving hardware textures and pre-cached bitmaps across all page transitions.
  */
+/**
+ * Surface-level transformation matrix managing 2D affine scale and focal pan offsets.
+ * Applied at the book surface container level to guarantee jitter-free, 60-120fps hardware acceleration.
+ */
+class SurfaceTransformationMatrix {
+    var scale by mutableFloatStateOf(1.0f)
+    var panOffset by mutableStateOf(Offset.Zero)
+
+    fun reset() {
+        scale = 1.0f
+        panOffset = Offset.Zero
+    }
+
+    fun clampPan(offset: Offset, s: Float, width: Float, height: Float): Offset {
+        if (s <= 1.0f) return Offset.Zero
+        val minX = width * (1f - s)
+        val minY = height * (1f - s)
+        return Offset(
+            x = offset.x.coerceIn(minX, 0f),
+            y = offset.y.coerceIn(minY, 0f)
+        )
+    }
+
+    fun applyZoomAndPan(
+        zoomFactor: Float,
+        panDelta: Offset,
+        centroid: Offset,
+        width: Float,
+        height: Float
+    ) {
+        val oldScale = scale
+        val newScale = (oldScale * zoomFactor).coerceIn(1.0f, 5.0f)
+        scale = newScale
+
+        if (newScale > 1.0f) {
+            val px = (centroid.x - panOffset.x) / oldScale
+            val py = (centroid.y - panOffset.y) / oldScale
+            val newPanX = centroid.x + panDelta.x - (px * newScale)
+            val newPanY = centroid.y + panDelta.y - (py * newScale)
+            panOffset = clampPan(Offset(newPanX, newPanY), newScale, width, height)
+        } else {
+            panOffset = Offset.Zero
+        }
+    }
+
+    fun applyDrag(dragDelta: Offset, width: Float, height: Float) {
+        if (scale > 1.02f) {
+            panOffset = clampPan(panOffset + dragDelta, scale, width, height)
+        }
+    }
+
+    fun zoomIn(width: Float, height: Float) {
+        val newScale = (scale + 0.5f).coerceAtMost(5.0f)
+        val factor = newScale / scale
+        applyZoomAndPan(factor, Offset.Zero, Offset(width / 2f, height / 2f), width, height)
+    }
+
+    fun zoomOut(width: Float, height: Float) {
+        val newScale = (scale - 0.5f).coerceAtLeast(1.0f)
+        if (newScale <= 1.0f) {
+            reset()
+        } else {
+            val factor = newScale / scale
+            applyZoomAndPan(factor, Offset.Zero, Offset(width / 2f, height / 2f), width, height)
+        }
+    }
+}
+
 @Composable
 fun BookPageView(
     bitmap: Bitmap?,
@@ -136,26 +206,26 @@ fun BookPageView(
     var flipDirection by remember { mutableStateOf(FlipDirection.NEXT) }
     var flipSourcePage by remember { mutableIntStateOf(pageIndex) }
     var flipTargetPage by remember { mutableIntStateOf(pageIndex) }
+    var pendingTargetPage by remember { mutableStateOf<Int?>(null) }
 
-    // Pinch-to-zoom & Pan state
-    var zoomScale by remember { mutableFloatStateOf(1.0f) }
-    var panOffset by remember { mutableStateOf(Offset.Zero) }
+    // Surface-level transformation matrix managing 2D affine scale and focal pan offsets
+    val surfaceMatrix = remember { SurfaceTransformationMatrix() }
 
-    // Helper to keep pan offset within visible scaled page boundaries
-    fun clampPan(offset: Offset, scale: Float, width: Float, height: Float): Offset {
-        if (scale <= 1.0f) return Offset.Zero
-        val maxPanX = ((width * scale) - width) / 2f
-        val maxPanY = ((height * scale) - height) / 2f
-        return Offset(
-            x = offset.x.coerceIn(-maxPanX, maxPanX),
-            y = offset.y.coerceIn(-maxPanY, maxPanY)
-        )
-    }
+    val currentHighlightMode by rememberUpdatedState(isHighlightMode)
+    val currentEditElementsMode by rememberUpdatedState(isEditElementsMode)
+    val currentPageFlipEnabled by rememberUpdatedState(isPageFlipEnabled)
+    val currentTotalPages by rememberUpdatedState(totalPages)
+    val currentOnTapLeft by rememberUpdatedState(onTapLeft)
+    val currentOnTapRight by rememberUpdatedState(onTapRight)
+    val currentOnTapCenter by rememberUpdatedState(onTapCenter)
+    val currentOnAddHighlightAtRatio by rememberUpdatedState(onAddHighlightAtRatio)
 
-    // Reset zoom and pan whenever user navigates to a new page
+    // Reset surface transformation matrix whenever user navigates to a new page
     LaunchedEffect(pageIndex) {
-        zoomScale = 1.0f
-        panOffset = Offset.Zero
+        if (pendingTargetPage == pageIndex) {
+            pendingTargetPage = null
+        }
+        surfaceMatrix.reset()
     }
 
     // Proactively pre-render adjacent pages into memory so they are guaranteed ready for flip
@@ -210,31 +280,34 @@ fun BookPageView(
                 )
         ) {
             // =========================================================================
-            // 1. BASE LAYER (ALWAYS MOUNTED & PERSISTENT — ZERO RE-ALLOCATION FLICKER)
+            // UNIFIED SURFACE-LEVEL HARDWARE TRANSFORMATION MATRIX
+            // Transforms the entire book surface (base sheet, turning sheet, shadows,
+            // annotations, page elements, and ruler) as an offscreen GPU texture,
+            // completely replacing jittery individual page scaling.
             // =========================================================================
-            // During flip next: Base layer displays target page (pageIndex + 1).
-            // During flip prev: Base layer displays current source page (pageIndex).
-            // At resting: Base layer displays current page (pageIndex).
-            val basePage = when {
-                isFlipping && flipDirection == FlipDirection.NEXT -> flipTargetPage
-                isFlipping && flipDirection == FlipDirection.PREV -> flipSourcePage
-                else -> pageIndex
-            }
-
-            val baseBitmap = getPageBitmap(basePage)
-
-            // Zoom & Pan Container for inspecting fine details
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .clipToBounds()
                     .graphicsLayer {
-                        scaleX = zoomScale
-                        scaleY = zoomScale
-                        translationX = panOffset.x
-                        translationY = panOffset.y
+                        transformOrigin = TransformOrigin(0f, 0f)
+                        scaleX = surfaceMatrix.scale
+                        scaleY = surfaceMatrix.scale
+                        translationX = surfaceMatrix.panOffset.x
+                        translationY = surfaceMatrix.panOffset.y
+                        compositingStrategy = CompositingStrategy.Offscreen
                     }
             ) {
+                // 1. BASE LAYER (ALWAYS MOUNTED & PERSISTENT — ZERO RE-ALLOCATION FLICKER)
+                val basePage = when {
+                    isFlipping && flipDirection == FlipDirection.NEXT -> flipTargetPage
+                    isFlipping && flipDirection == FlipDirection.PREV -> flipSourcePage
+                    pendingTargetPage != null -> pendingTargetPage!!
+                    else -> pageIndex
+                }
+
+                val baseBitmap = getPageBitmap(basePage)
+
                 SinglePageSheet(
                     pageIndex = basePage,
                     renderedBitmap = baseBitmap,
@@ -245,10 +318,10 @@ fun BookPageView(
                     annotations = if (basePage == pageIndex) annotations else emptyList(),
                     searchMatches = searchMatches,
                     containerHeight = containerHeight,
-                    isReadingRulerEnabled = isReadingRulerEnabled && !isFlipping && zoomScale <= 1.05f,
+                    isReadingRulerEnabled = isReadingRulerEnabled && !isFlipping && surfaceMatrix.scale <= 1.05f,
                     readingRulerRatio = readingRulerRatio,
                     pageElements = if (basePage == pageIndex) pageElements else emptyList(),
-                    isEditElementsMode = isEditElementsMode && !isFlipping && zoomScale <= 1.05f,
+                    isEditElementsMode = isEditElementsMode && !isFlipping && surfaceMatrix.scale <= 1.05f,
                     onAnnotationClick = onAnnotationClick,
                     onRulerPositionChange = onRulerPositionChange,
                     onUpdateElementPosition = onUpdateElementPosition,
@@ -256,119 +329,117 @@ fun BookPageView(
                     onEditElement = onEditElement,
                     modifier = Modifier.fillMaxSize()
                 )
-            }
 
-            // Dynamic drop shadow cast on the base layer during flip
-            if (isFlipping) {
-                val progress = flipProgress.value.coerceIn(0f, 1f)
-                val shadowAlpha = sin(progress * PI.toFloat()) * 0.40f
-                val shadowWidth = if (flipDirection == FlipDirection.NEXT) {
-                    (containerWidth.value * (1f - progress) * 0.40f).dp.coerceAtLeast(4.dp)
-                } else {
-                    (containerWidth.value * progress * 0.40f).dp.coerceAtLeast(4.dp)
-                }
+                // Dynamic drop shadow cast on the base layer during flip
+                if (isFlipping) {
+                    val progress = flipProgress.value.coerceIn(0f, 1f)
+                    val shadowAlpha = sin(progress * PI.toFloat()) * 0.40f
+                    val shadowWidth = if (flipDirection == FlipDirection.NEXT) {
+                        (containerWidth.value * (1f - progress) * 0.40f).dp.coerceAtLeast(4.dp)
+                    } else {
+                        (containerWidth.value * progress * 0.40f).dp.coerceAtLeast(4.dp)
+                    }
 
-                Box(
-                    modifier = Modifier
-                        .fillMaxHeight()
-                        .width(shadowWidth)
-                        .align(Alignment.CenterStart)
-                        .background(
-                            Brush.horizontalGradient(
-                                colors = listOf(
-                                    Color.Black.copy(alpha = shadowAlpha),
-                                    Color.Black.copy(alpha = shadowAlpha * 0.35f),
-                                    Color.Transparent
-                                )
-                            )
-                        )
-                )
-            }
-
-            // =========================================================================
-            // 2. TURNING LAYER (3D Rotating Sheet anchored at left spine)
-            // =========================================================================
-            if (isFlipping) {
-                val progress = flipProgress.value.coerceIn(0f, 1f)
-                val rotationY = if (flipDirection == FlipDirection.NEXT) {
-                    -180f * progress
-                } else {
-                    -180f * (1f - progress)
-                }
-                val turningPage = if (flipDirection == FlipDirection.NEXT) flipSourcePage else flipTargetPage
-                val turningBitmap = getPageBitmap(turningPage)
-                val isFrontFace = rotationY >= -90f
-
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .graphicsLayer {
-                            this.rotationY = rotationY
-                            transformOrigin = TransformOrigin(0f, 0.5f)
-                            cameraDistance = 28f * density
-                            compositingStrategy = CompositingStrategy.Offscreen
-                        }
-                ) {
-                    if (isFrontFace) {
-                        SinglePageSheet(
-                            pageIndex = turningPage,
-                            renderedBitmap = turningBitmap,
-                            pdfEngine = pdfEngine,
-                            readingTheme = readingTheme,
-                            isDarkTheme = isDarkTheme,
-                            isBookmarked = isBookmarked && turningPage == pageIndex,
-                            annotations = if (turningPage == pageIndex) annotations else emptyList(),
-                            searchMatches = searchMatches,
-                            containerHeight = containerHeight,
-                            pageElements = if (turningPage == pageIndex) pageElements else emptyList(),
-                            isEditElementsMode = false,
-                            modifier = Modifier.fillMaxSize()
-                        )
-
-                        // 3D curl lighting: concave crease shadow + convex specular fold highlight
-                        val curlIntensity = sin(progress * PI.toFloat())
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(
-                                    Brush.horizontalGradient(
-                                        0.0f to Color.Transparent,
-                                        (0.35f + progress * 0.3f).coerceIn(0f, 1f) to Color.Black.copy(alpha = curlIntensity * 0.25f),
-                                        (0.55f + progress * 0.3f).coerceIn(0f, 1f) to Color.White.copy(alpha = curlIntensity * 0.30f),
-                                        1.0f to Color.Black.copy(alpha = curlIntensity * 0.16f)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .width(shadowWidth)
+                            .align(Alignment.CenterStart)
+                            .background(
+                                Brush.horizontalGradient(
+                                    colors = listOf(
+                                        Color.Black.copy(alpha = shadowAlpha),
+                                        Color.Black.copy(alpha = shadowAlpha * 0.35f),
+                                        Color.Transparent
                                     )
                                 )
-                        )
+                            )
+                    )
+                }
+
+                // 2. TURNING LAYER (3D Rotating Sheet anchored at left spine)
+                if (isFlipping) {
+                    val progress = flipProgress.value.coerceIn(0f, 1f)
+                    val rotationY = if (flipDirection == FlipDirection.NEXT) {
+                        -180f * progress
                     } else {
-                        // Verso (backside of page turning over)
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .graphicsLayer {
-                                    this.rotationY = 180f
-                                    compositingStrategy = CompositingStrategy.Offscreen
-                                }
-                        ) {
-                            PageVersoSheet(
+                        -180f * (1f - progress)
+                    }
+                    val turningPage = if (flipDirection == FlipDirection.NEXT) flipSourcePage else flipTargetPage
+                    val turningBitmap = getPageBitmap(turningPage)
+                    val isFrontFace = rotationY >= -90f
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer {
+                                this.rotationY = rotationY
+                                transformOrigin = TransformOrigin(0f, 0.5f)
+                                cameraDistance = 28f * density
+                                compositingStrategy = CompositingStrategy.Offscreen
+                            }
+                    ) {
+                        if (isFrontFace) {
+                            SinglePageSheet(
                                 pageIndex = turningPage,
-                                readingTheme = readingTheme,
-                                frontBitmap = turningBitmap,
+                                renderedBitmap = turningBitmap,
                                 pdfEngine = pdfEngine,
+                                readingTheme = readingTheme,
+                                isDarkTheme = isDarkTheme,
+                                isBookmarked = isBookmarked && turningPage == pageIndex,
+                                annotations = if (turningPage == pageIndex) annotations else emptyList(),
+                                searchMatches = searchMatches,
+                                containerHeight = containerHeight,
+                                pageElements = if (turningPage == pageIndex) pageElements else emptyList(),
+                                isEditElementsMode = false,
                                 modifier = Modifier.fillMaxSize()
                             )
 
+                            // 3D curl lighting: concave crease shadow + convex specular fold highlight
                             val curlIntensity = sin(progress * PI.toFloat())
                             Box(
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .background(
                                         Brush.horizontalGradient(
-                                            0.0f to Color.Black.copy(alpha = curlIntensity * 0.15f),
-                                            0.4f to Color.White.copy(alpha = curlIntensity * 0.20f),
-                                            1.0f to Color.Black.copy(alpha = curlIntensity * 0.20f)
+                                            0.0f to Color.Transparent,
+                                            (0.35f + progress * 0.3f).coerceIn(0f, 1f) to Color.Black.copy(alpha = curlIntensity * 0.25f),
+                                            (0.55f + progress * 0.3f).coerceIn(0f, 1f) to Color.White.copy(alpha = curlIntensity * 0.30f),
+                                            1.0f to Color.Black.copy(alpha = curlIntensity * 0.16f)
                                         )
                                     )
                             )
+                        } else {
+                            // Verso (backside of page turning over)
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .graphicsLayer {
+                                        this.rotationY = 180f
+                                        compositingStrategy = CompositingStrategy.Offscreen
+                                    }
+                            ) {
+                                PageVersoSheet(
+                                    pageIndex = turningPage,
+                                    readingTheme = readingTheme,
+                                    frontBitmap = turningBitmap,
+                                    pdfEngine = pdfEngine,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+
+                                val curlIntensity = sin(progress * PI.toFloat())
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(
+                                            Brush.horizontalGradient(
+                                                0.0f to Color.Black.copy(alpha = curlIntensity * 0.15f),
+                                                0.4f to Color.White.copy(alpha = curlIntensity * 0.20f),
+                                                1.0f to Color.Black.copy(alpha = curlIntensity * 0.20f)
+                                            )
+                                        )
+                                )
+                            }
                         }
                     }
                 }
@@ -380,12 +451,13 @@ fun BookPageView(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .pointerInput(pageIndex, isHighlightMode, isEditElementsMode, isPageFlipEnabled, totalPages, zoomScale) {
+                    .pointerInput(pageIndex) {
                         awaitEachGesture {
-                            if (isEditElementsMode) return@awaitEachGesture
+                            if (currentEditElementsMode) return@awaitEachGesture
                             val down = awaitFirstDown(requireUnconsumed = false)
                             var totalDragX = 0f
                             var isDrag = false
+                            var isPinching = false
                             val touchSlop = viewConfiguration.touchSlop
                             val w = size.width.toFloat()
                             val h = size.height.toFloat()
@@ -395,7 +467,8 @@ fun BookPageView(
                                 val pressedPointers = event.changes.filter { it.pressed }
 
                                 if (pressedPointers.size >= 2) {
-                                    // MULTI-TOUCH: Pinch-to-Zoom & Multi-touch Pan
+                                    // MULTI-TOUCH: Pinch-to-Zoom & Multi-touch Pan smoothly via surface matrix
+                                    isPinching = true
                                     if (isFlipping) {
                                         coroutineScope.launch {
                                             flipProgress.snapTo(0f)
@@ -405,24 +478,27 @@ fun BookPageView(
 
                                     val zoomFactor = event.calculateZoom()
                                     val panDelta = event.calculatePan()
+                                    val centroid = event.calculateCentroid(useCurrent = true)
 
-                                    val newScale = (zoomScale * zoomFactor).coerceIn(1.0f, 5.0f)
-                                    zoomScale = newScale
-
-                                    if (newScale > 1.0f) {
-                                        panOffset = clampPan(panOffset + panDelta, newScale, w, h)
-                                    } else {
-                                        panOffset = Offset.Zero
+                                    if (zoomFactor != 1f || panDelta != Offset.Zero) {
+                                        surfaceMatrix.applyZoomAndPan(zoomFactor, panDelta, centroid, w, h)
                                     }
 
                                     event.changes.forEach { it.consume() }
                                 } else if (pressedPointers.size == 1) {
                                     val change = pressedPointers.first()
 
-                                    if (zoomScale > 1.05f) {
+                                    if (isPinching) {
+                                        // User released one finger during pinch; continue smooth pan without page flip
+                                        if (surfaceMatrix.scale > 1.05f) {
+                                            val dragDelta = change.position - change.previousPosition
+                                            surfaceMatrix.applyDrag(dragDelta, w, h)
+                                            change.consume()
+                                        }
+                                    } else if (surfaceMatrix.scale > 1.05f) {
                                         // ZOOMED IN: 1-finger drag pans around the zoomed page smoothly!
                                         val dragDelta = change.position - change.previousPosition
-                                        panOffset = clampPan(panOffset + dragDelta, zoomScale, w, h)
+                                        surfaceMatrix.applyDrag(dragDelta, w, h)
                                         change.consume()
                                     } else {
                                         // 1X NORMAL: Horizontal swipe initiates 3D page flip
@@ -431,8 +507,8 @@ fun BookPageView(
 
                                         if (!isDrag && abs(totalDragX) > touchSlop) {
                                             isDrag = true
-                                            if (isPageFlipEnabled && !isFlipping) {
-                                                if (totalDragX < 0 && pageIndex < totalPages - 1) {
+                                            if (currentPageFlipEnabled && !isFlipping) {
+                                                if (totalDragX < 0 && pageIndex < currentTotalPages - 1) {
                                                     flipSourcePage = pageIndex
                                                     flipTargetPage = pageIndex + 1
                                                     flipDirection = FlipDirection.NEXT
@@ -461,11 +537,17 @@ fun BookPageView(
                                         }
                                     }
                                 } else {
-                                    // Pointer released
+                                    // Pointer released (all fingers lifted)
                                     val change = event.changes.firstOrNull() ?: break
 
-                                    if (zoomScale > 1.05f) {
-                                        panOffset = clampPan(panOffset, zoomScale, w, h)
+                                    if (isPinching) {
+                                        if (surfaceMatrix.scale <= 1.02f) {
+                                            surfaceMatrix.reset()
+                                        } else {
+                                            surfaceMatrix.panOffset = surfaceMatrix.clampPan(surfaceMatrix.panOffset, surfaceMatrix.scale, w, h)
+                                        }
+                                    } else if (surfaceMatrix.scale > 1.05f) {
+                                        surfaceMatrix.panOffset = surfaceMatrix.clampPan(surfaceMatrix.panOffset, surfaceMatrix.scale, w, h)
                                     } else if (isDrag && isFlipping) {
                                         change.consume()
                                         val currentP = flipProgress.value
@@ -479,14 +561,15 @@ fun BookPageView(
                                                         easing = FastOutSlowInEasing
                                                     )
                                                 )
-
+                                                val target = flipTargetPage
+                                                pendingTargetPage = target
                                                 isFlipping = false
                                                 flipProgress.snapTo(0f)
 
                                                 if (flipDirection == FlipDirection.NEXT) {
-                                                    onTapRight()
+                                                    currentOnTapRight()
                                                 } else {
-                                                    onTapLeft()
+                                                    currentOnTapLeft()
                                                 }
                                             } else {
                                                 flipProgress.animateTo(
@@ -501,16 +584,16 @@ fun BookPageView(
                                         val xRatio = down.position.x / w
                                         val yRatio = down.position.y / h
 
-                                        if (isHighlightMode) {
-                                            onAddHighlightAtRatio(yRatio)
-                                        } else if (zoomScale > 1.05f) {
+                                        if (currentHighlightMode) {
+                                            currentOnAddHighlightAtRatio(yRatio)
+                                        } else if (surfaceMatrix.scale > 1.05f) {
                                             // When inspecting zoomed details, tap toggles controls without accidental page flip
-                                            onTapCenter()
+                                            currentOnTapCenter()
                                         } else {
                                             when {
                                                 xRatio < 0.25f -> {
                                                     // Left edge tap: Previous Page
-                                                    if (isPageFlipEnabled && pageIndex > 0 && !isFlipping) {
+                                                    if (currentPageFlipEnabled && pageIndex > 0 && !isFlipping) {
                                                         coroutineScope.launch {
                                                             flipSourcePage = pageIndex
                                                             flipTargetPage = pageIndex - 1
@@ -521,17 +604,19 @@ fun BookPageView(
                                                                 targetValue = 1f,
                                                                 animationSpec = tween(durationMillis = 240, easing = FastOutSlowInEasing)
                                                             )
+                                                            val target = flipTargetPage
+                                                            pendingTargetPage = target
                                                             isFlipping = false
                                                             flipProgress.snapTo(0f)
-                                                            onTapLeft()
+                                                            currentOnTapLeft()
                                                         }
                                                     } else if (!isFlipping) {
-                                                        onTapLeft()
+                                                        currentOnTapLeft()
                                                     }
                                                 }
                                                 xRatio > 0.75f -> {
                                                     // Right edge tap: Next Page
-                                                    if (isPageFlipEnabled && pageIndex < totalPages - 1 && !isFlipping) {
+                                                    if (currentPageFlipEnabled && pageIndex < currentTotalPages - 1 && !isFlipping) {
                                                         coroutineScope.launch {
                                                             flipSourcePage = pageIndex
                                                             flipTargetPage = pageIndex + 1
@@ -542,15 +627,17 @@ fun BookPageView(
                                                                 targetValue = 1f,
                                                                 animationSpec = tween(durationMillis = 240, easing = FastOutSlowInEasing)
                                                             )
+                                                            val target = flipTargetPage
+                                                            pendingTargetPage = target
                                                             isFlipping = false
                                                             flipProgress.snapTo(0f)
-                                                            onTapRight()
+                                                            currentOnTapRight()
                                                         }
                                                     } else if (!isFlipping) {
-                                                        onTapRight()
+                                                        currentOnTapRight()
                                                     }
                                                 }
-                                                else -> onTapCenter()
+                                                else -> currentOnTapCenter()
                                             }
                                         }
                                     }
@@ -565,7 +652,7 @@ fun BookPageView(
             // 4. FLOATING PINCH-TO-ZOOM INSPECTION CONTROLS OVERLAY
             // =========================================================================
             AnimatedVisibility(
-                visible = zoomScale > 1.05f,
+                visible = surfaceMatrix.scale > 1.05f,
                 enter = fadeIn() + slideInVertically { -it },
                 exit = fadeOut() + slideOutVertically { -it },
                 modifier = Modifier
@@ -589,9 +676,7 @@ fun BookPageView(
                     ) {
                         IconButton(
                             onClick = {
-                                val newScale = (zoomScale - 0.5f).coerceAtLeast(1.0f)
-                                zoomScale = newScale
-                                panOffset = if (newScale <= 1.0f) Offset.Zero else clampPan(panOffset, newScale, containerWidth.value, containerHeight.value)
+                                surfaceMatrix.zoomOut(containerWidth.value, containerHeight.value)
                             },
                             modifier = Modifier.size(30.dp).testTag("zoom_out_button")
                         ) {
@@ -604,7 +689,7 @@ fun BookPageView(
                         }
 
                         Text(
-                            text = "${(zoomScale * 100).toInt()}%",
+                            text = "${(surfaceMatrix.scale * 100).toInt()}%",
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Bold,
                             fontFamily = FontFamily.Monospace,
@@ -614,9 +699,7 @@ fun BookPageView(
 
                         IconButton(
                             onClick = {
-                                val newScale = (zoomScale + 0.5f).coerceAtMost(5.0f)
-                                zoomScale = newScale
-                                panOffset = clampPan(panOffset, newScale, containerWidth.value, containerHeight.value)
+                                surfaceMatrix.zoomIn(containerWidth.value, containerHeight.value)
                             },
                             modifier = Modifier.size(30.dp).testTag("zoom_in_button")
                         ) {
@@ -636,8 +719,7 @@ fun BookPageView(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(12.dp))
                                 .clickable {
-                                    zoomScale = 1.0f
-                                    panOffset = Offset.Zero
+                                    surfaceMatrix.reset()
                                 }
                                 .testTag("reset_zoom_button")
                         ) {

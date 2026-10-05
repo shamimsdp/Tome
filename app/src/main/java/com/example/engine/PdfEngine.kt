@@ -18,6 +18,12 @@ data class SearchMatch(
     val verticalRatio: Float = 0.3f
 )
 
+data class DocumentSection(
+    val pageIndex: Int,
+    val title: String,
+    val subtitle: String? = null
+)
+
 class PdfEngine {
     private var fileDescriptor: ParcelFileDescriptor? = null
     private var renderer: PdfRenderer? = null
@@ -41,9 +47,55 @@ class PdfEngine {
         return bitmapCache.get(cacheKey)
     }
 
+    fun getCachedThumbnail(pageIndex: Int): Bitmap? {
+        val cacheKey = "${currentFile?.absolutePath}_thumb_$pageIndex"
+        return bitmapCache.get(cacheKey)
+    }
+
     fun isPageCached(pageIndex: Int): Boolean {
         val cacheKey = "${currentFile?.absolutePath}_$pageIndex"
         return bitmapCache.get(cacheKey) != null
+    }
+
+    fun getDocumentSections(totalPages: Int): List<DocumentSection> {
+        val sections = mutableListOf<DocumentSection>()
+        val sampleBook = SamplePdfGenerator.sampleBooks.find { it.filename == currentFile?.name }
+        if (sampleBook != null) {
+            sampleBook.pagesText.forEachIndexed { index, page ->
+                if (page.chapterTitle.isNotBlank()) {
+                    sections.add(DocumentSection(index, page.chapterTitle, page.subtitle))
+                }
+            }
+        }
+        if (sections.isEmpty()) {
+            textIndexByPage.forEach { (pageIdx, content) ->
+                val lines = content.lines().filter { it.isNotBlank() }
+                val heading = lines.firstOrNull { line ->
+                    line.startsWith("Chapter", ignoreCase = true) ||
+                    line.startsWith("Section", ignoreCase = true) ||
+                    line.startsWith("Part", ignoreCase = true) ||
+                    line.startsWith("Introduction", ignoreCase = true) ||
+                    line.startsWith("Conclusion", ignoreCase = true) ||
+                    line.startsWith("Preface", ignoreCase = true)
+                }?.trim()
+                if (heading != null) {
+                    sections.add(DocumentSection(pageIdx, heading.take(36)))
+                }
+            }
+        }
+        if (sections.isEmpty() && totalPages > 0) {
+            val step = when {
+                totalPages <= 12 -> 2
+                totalPages <= 35 -> 5
+                totalPages <= 100 -> 10
+                else -> 20
+            }
+            for (p in 0 until totalPages step step) {
+                val endP = (p + step).coerceAtMost(totalPages)
+                sections.add(DocumentSection(p, "Pages ${p + 1}–$endP", "Section ${(p / step) + 1}"))
+            }
+        }
+        return sections.sortedBy { it.pageIndex }
     }
 
     suspend fun openFile(file: File): Int = withContext(Dispatchers.IO) {
