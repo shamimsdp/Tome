@@ -2,6 +2,8 @@ package com.example.ui.screens
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -10,6 +12,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -174,6 +178,21 @@ fun ReaderScreen(
             .fillMaxSize()
             .testTag("reader_screen")
     ) { innerPadding ->
+        val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+        val topBarHeight = statusBarTop + 64.dp
+
+        val animatedTopPadding by animateDpAsState(
+            targetValue = if (isControlsVisible || isSearchActive) topBarHeight else (statusBarTop + 4.dp),
+            animationSpec = tween(durationMillis = 200),
+            label = "reader_top_padding"
+        )
+
+        val animatedBottomPadding by animateDpAsState(
+            targetValue = if (isControlsVisible) 84.dp else 0.dp,
+            animationSpec = tween(durationMillis = 200),
+            label = "reader_bottom_padding"
+        )
+
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -226,17 +245,17 @@ fun ReaderScreen(
                 onEditElement = {
                     viewModel.openAddElementDialog()
                 },
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(top = animatedTopPadding, bottom = animatedBottomPadding)
             )
 
-            // Top Bar with animations
+            // Top Bar with animations (Toolbar background extends seamlessly to top edge of screen)
             AnimatedVisibility(
                 visible = isControlsVisible && !isSearchActive,
                 enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
                 exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut(),
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .statusBarsPadding()
+                modifier = Modifier.align(Alignment.TopCenter)
             ) {
                 ReadingTopBar(
                     title = document.title,

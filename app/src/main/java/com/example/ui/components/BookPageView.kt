@@ -271,8 +271,7 @@ fun BookPageView(
         modifier = modifier
             .fillMaxSize()
             .background(pageBackground)
-            .statusBarsPadding()
-            .padding(start = 4.dp, top = 2.dp, end = 4.dp, bottom = 4.dp)
+            .padding(horizontal = 4.dp, vertical = 2.dp)
             .testTag("book_page_container"),
         contentAlignment = Alignment.TopCenter
     ) {
