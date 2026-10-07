@@ -34,6 +34,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.GenericShape
@@ -77,6 +78,8 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -92,7 +95,11 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.sin
+import kotlin.math.sqrt
 
 enum class FlipDirection {
     NEXT,
@@ -264,9 +271,10 @@ fun BookPageView(
         modifier = modifier
             .fillMaxSize()
             .background(pageBackground)
-            .padding(horizontal = 8.dp, vertical = 6.dp)
+            .statusBarsPadding()
+            .padding(start = 4.dp, top = 2.dp, end = 4.dp, bottom = 4.dp)
             .testTag("book_page_container"),
-        contentAlignment = Alignment.Center
+        contentAlignment = Alignment.TopCenter
     ) {
         val containerWidth = maxWidth
         val containerHeight = maxHeight
@@ -332,150 +340,182 @@ fun BookPageView(
                 )
 
                 // =========================================================================
-                // 2. REALISTIC PHYSICAL PAGE CURL (harism/android-pagecurl engine)
-                // Simulates physical paper deformation: reveals the page underneath,
-                // curls the top page with an authentic curved fold, displays the verso
-                // cylindrical roll, and casts dynamic lighting and drop shadows.
+                // 2. AUTHENTIC 3D PAGE CURL (harism/android-pagecurl paper curl physics)
+                // Peels the page smoothly across the screen like Harri Smått's pagecurl.
+                // As the page turns, the turning page curls over with a cylindrical roll,
+                // revealing the underlying page beneath, displaying the verso (backside)
+                // on the curled flap with specular 3D cylindrical shine, crease shadow,
+                // and authentic drop shadow cast onto the page beneath.
                 // =========================================================================
                 if (isFlipping) {
                     val progress = flipProgress.value.coerceIn(0f, 1f)
                     val curlIntensity = sin(progress * PI.toFloat())
                     val turningPage = if (flipDirection == FlipDirection.NEXT) flipSourcePage else flipTargetPage
                     val turningBitmap = getPageBitmap(turningPage)
+                    val isNext = flipDirection == FlipDirection.NEXT
+                    val foldProgress = if (isNext) 1f - progress else progress
 
-                    // 2a. Dynamic Drop Shadow cast from the curl fold onto the base page underneath
-                    Canvas(modifier = Modifier.fillMaxSize()) {
+                    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                        val densityFactor = LocalDensity.current.density
+                        val w = maxWidth.value * densityFactor
+                        val slant = 32f * curlIntensity
+                        val topX = (w * foldProgress + (if (isNext) slant else -slant)).coerceIn(0f, w)
+                        val bottomX = (w * foldProgress - (if (isNext) slant else -slant)).coerceIn(0f, w)
+                        val rollWidth = (w * progress * 0.40f + 32f).coerceAtMost(w * 0.45f)
+
+                        // 2a. Dynamic Drop Shadow cast from the curl cylinder onto the revealed underlying page
                         if (curlIntensity > 0.005f) {
-                            val w = size.width
-                            val h = size.height
-                            val cX = if (flipDirection == FlipDirection.NEXT) w * (1f - progress) else w * progress
-                            val shadowWidth = (w * 0.18f * curlIntensity).coerceAtLeast(8f)
-                            val shadowAlpha = curlIntensity * 0.45f
-                            drawRect(
-                                brush = Brush.horizontalGradient(
-                                    colors = listOf(
-                                        Color.Black.copy(alpha = shadowAlpha),
-                                        Color.Black.copy(alpha = shadowAlpha * 0.40f),
-                                        Color.Transparent
-                                    ),
-                                    startX = cX,
-                                    endX = (cX + shadowWidth).coerceAtMost(w)
-                                ),
-                                topLeft = Offset(cX, 0f),
-                                size = Size(shadowWidth, h)
-                            )
-                        }
-                    }
+                            Canvas(modifier = Modifier.fillMaxSize()) {
+                                val sDist = (44f * curlIntensity).coerceAtLeast(4f)
+                                val shadowAlpha = (0.40f * curlIntensity).coerceIn(0f, 0.42f)
 
-                    // 2b. The Top Curling Page (clipped along the dynamic fold line)
-                    val topCurlClipShape = GenericShape { size, _ ->
-                        val w = size.width
-                        val h = size.height
-                        val p = progress
-                        val curlTilt = w * 0.045f * curlIntensity
-                        if (flipDirection == FlipDirection.NEXT) {
-                            val cTop = (w * (1f - p) - curlTilt).coerceIn(0f, w)
-                            val cBottom = (w * (1f - p) + curlTilt).coerceIn(0f, w)
+                                val shadowPath = Path().apply {
+                                    moveTo(topX, 0f)
+                                    lineTo(bottomX, size.height)
+                                    lineTo(bottomX + sDist, size.height)
+                                    lineTo(topX + sDist, 0f)
+                                    close()
+                                }
+                                drawPath(
+                                    path = shadowPath,
+                                    brush = Brush.horizontalGradient(
+                                        colors = listOf(
+                                            Color.Black.copy(alpha = shadowAlpha),
+                                            Color.Black.copy(alpha = shadowAlpha * 0.4f),
+                                            Color.Transparent
+                                        ),
+                                        startX = min(topX, bottomX),
+                                        endX = max(topX, bottomX) + sDist
+                                    )
+                                )
+                            }
+                        }
+
+                        // 2b. The Uncurled Flat Page (Clipped at the fold line)
+                        val uncurledFrontShape = GenericShape { size, _ ->
                             moveTo(0f, 0f)
-                            lineTo(cTop, 0f)
-                            lineTo(cBottom, h)
-                            lineTo(0f, h)
-                            close()
-                        } else {
-                            val cTop = (w * p + curlTilt).coerceIn(0f, w)
-                            val cBottom = (w * p - curlTilt).coerceIn(0f, w)
-                            moveTo(0f, 0f)
-                            lineTo(cTop, 0f)
-                            lineTo(cBottom, h)
-                            lineTo(0f, h)
+                            lineTo(topX, 0f)
+                            lineTo(bottomX, size.height)
+                            lineTo(0f, size.height)
                             close()
                         }
-                    }
 
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .clip(topCurlClipShape)
-                    ) {
-                        SinglePageSheet(
-                            pageIndex = turningPage,
-                            renderedBitmap = turningBitmap,
-                            pdfEngine = pdfEngine,
-                            readingTheme = readingTheme,
-                            isDarkTheme = isDarkTheme,
-                            isBookmarked = isBookmarked && turningPage == pageIndex,
-                            annotations = if (turningPage == pageIndex) annotations else emptyList(),
-                            searchMatches = searchMatches,
-                            containerHeight = containerHeight,
-                            pageElements = if (turningPage == pageIndex) pageElements else emptyList(),
-                            isEditElementsMode = false,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    }
-
-                    // 2c. Curled Page Flap (the rolled cylinder of paper / verso backside)
-                    val curlFlapShape = GenericShape { size, _ ->
-                        val w = size.width
-                        val h = size.height
-                        val p = progress
-                        val curlW = (w * 0.28f * curlIntensity).coerceAtLeast(0f)
-                        val curlTilt = w * 0.045f * curlIntensity
-                        val cTop = if (flipDirection == FlipDirection.NEXT) {
-                            (w * (1f - p) - curlTilt).coerceIn(0f, w)
-                        } else {
-                            (w * p + curlTilt).coerceIn(0f, w)
-                        }
-                        val cBottom = if (flipDirection == FlipDirection.NEXT) {
-                            (w * (1f - p) + curlTilt).coerceIn(0f, w)
-                        } else {
-                            (w * p - curlTilt).coerceIn(0f, w)
-                        }
-                        val lTop = (cTop - curlW).coerceAtLeast(0f)
-                        val lBottom = (cBottom - curlW).coerceAtLeast(0f)
-                        moveTo(lTop, 0f)
-                        lineTo(cTop, 0f)
-                        lineTo(cBottom, h)
-                        lineTo(lBottom, h)
-                        close()
-                    }
-
-                    if (curlIntensity > 0.01f) {
                         Box(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .clip(curlFlapShape)
+                                .clip(uncurledFrontShape)
                         ) {
-                            PageVersoSheet(
+                            SinglePageSheet(
                                 pageIndex = turningPage,
-                                readingTheme = readingTheme,
-                                frontBitmap = turningBitmap,
+                                renderedBitmap = turningBitmap,
                                 pdfEngine = pdfEngine,
+                                readingTheme = readingTheme,
+                                isDarkTheme = isDarkTheme,
+                                isBookmarked = isBookmarked && turningPage == pageIndex,
+                                annotations = if (turningPage == pageIndex) annotations else emptyList(),
+                                searchMatches = searchMatches,
+                                containerHeight = containerHeight,
+                                pageElements = if (turningPage == pageIndex) pageElements else emptyList(),
+                                isEditElementsMode = false,
                                 modifier = Modifier.fillMaxSize()
                             )
+                        }
 
-                            // 3D Cylindrical lighting shader (crease shadow + specular paper highlight + outer shadow)
-                            Canvas(modifier = Modifier.fillMaxSize()) {
-                                val w = size.width
-                                val h = size.height
-                                val p = progress
-                                val curlW = (w * 0.28f * curlIntensity).coerceAtLeast(10f)
-                                val cX = if (flipDirection == FlipDirection.NEXT) w * (1f - p) else w * p
-                                val lX = (cX - curlW).coerceAtLeast(0f)
+                        // 2c. Curled Verso Flap (Backside of curling page with 3D paper roll)
+                        if (curlIntensity > 0.008f) {
+                            val flapShape = GenericShape { size, _ ->
+                                if (isNext) {
+                                    // Flap rolls to the left of the fold line
+                                    val leftTop = (topX - rollWidth).coerceAtLeast(0f)
+                                    val leftBottom = (bottomX - rollWidth).coerceAtLeast(0f)
+                                    moveTo(leftTop, 0f)
+                                    lineTo(topX, 0f)
+                                    lineTo(bottomX, size.height)
+                                    lineTo(leftBottom, size.height)
+                                    close()
+                                } else {
+                                    // Flap rolls to the right of the fold line
+                                    val rightTop = (topX + rollWidth).coerceAtMost(size.width)
+                                    val rightBottom = (bottomX + rollWidth).coerceAtMost(size.width)
+                                    moveTo(topX, 0f)
+                                    lineTo(rightTop, 0f)
+                                    lineTo(rightBottom, size.height)
+                                    lineTo(bottomX, size.height)
+                                    close()
+                                }
+                            }
 
-                                // Specular cylinder highlight and crease roll
-                                drawRect(
-                                    brush = Brush.horizontalGradient(
-                                        0.0f to Color.Black.copy(alpha = 0.36f * curlIntensity),
-                                        0.25f to Color.Transparent,
-                                        0.65f to Color.White.copy(alpha = 0.50f * curlIntensity),
-                                        0.90f to Color.Black.copy(alpha = 0.25f * curlIntensity),
-                                        1.0f to Color.Black.copy(alpha = 0.48f * curlIntensity),
-                                        startX = lX,
-                                        endX = cX
-                                    ),
-                                    topLeft = Offset(lX, 0f),
-                                    size = Size(curlW, h)
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .clip(flapShape)
+                            ) {
+                                PageVersoSheet(
+                                    pageIndex = turningPage,
+                                    readingTheme = readingTheme,
+                                    frontBitmap = turningBitmap,
+                                    pdfEngine = pdfEngine,
+                                    modifier = Modifier.fillMaxSize()
                                 )
+
+                                // 3D Cylindrical Lighting & Specular Sheen (harism/android-pagecurl look)
+                                Canvas(modifier = Modifier.fillMaxSize()) {
+                                    val foldMidX = (topX + bottomX) * 0.5f
+
+                                    if (isNext) {
+                                        val flapApexX = foldMidX - rollWidth * 0.45f
+
+                                        // Specular highlight band along the roll cylinder
+                                        drawRect(
+                                            brush = Brush.horizontalGradient(
+                                                0.0f to Color.Transparent,
+                                                0.30f to Color.White.copy(alpha = 0.55f * curlIntensity),
+                                                0.50f to Color.White.copy(alpha = 0.70f * curlIntensity),
+                                                0.70f to Color.White.copy(alpha = 0.35f * curlIntensity),
+                                                1.0f to Color.Transparent,
+                                                startX = (flapApexX - 24f).coerceAtLeast(0f),
+                                                endX = flapApexX + 24f
+                                            )
+                                        )
+
+                                        // Crease shadow right at the fold
+                                        drawRect(
+                                            brush = Brush.horizontalGradient(
+                                                0.0f to Color.Transparent,
+                                                0.60f to Color.Black.copy(alpha = 0.40f * curlIntensity),
+                                                1.0f to Color.Black.copy(alpha = 0.15f * curlIntensity),
+                                                startX = (foldMidX - 18f).coerceAtLeast(0f),
+                                                endX = foldMidX + 4f
+                                            )
+                                        )
+                                    } else {
+                                        val flapApexX = foldMidX + rollWidth * 0.45f
+
+                                        // Specular highlight band along the roll cylinder
+                                        drawRect(
+                                            brush = Brush.horizontalGradient(
+                                                0.0f to Color.Transparent,
+                                                0.30f to Color.White.copy(alpha = 0.55f * curlIntensity),
+                                                0.50f to Color.White.copy(alpha = 0.70f * curlIntensity),
+                                                0.70f to Color.White.copy(alpha = 0.35f * curlIntensity),
+                                                1.0f to Color.Transparent,
+                                                startX = flapApexX - 24f,
+                                                endX = (flapApexX + 24f).coerceAtMost(size.width)
+                                            )
+                                        )
+
+                                        // Crease shadow right at the fold
+                                        drawRect(
+                                            brush = Brush.horizontalGradient(
+                                                0.0f to Color.Black.copy(alpha = 0.15f * curlIntensity),
+                                                0.40f to Color.Black.copy(alpha = 0.40f * curlIntensity),
+                                                1.0f to Color.Transparent,
+                                                startX = (foldMidX - 4f).coerceAtLeast(0f),
+                                                endX = foldMidX + 18f
+                                            )
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -873,6 +913,8 @@ private fun SinglePageSheet(
                     bitmap = imageBitmap,
                     contentDescription = "PDF Page ${pageIndex + 1}",
                     colorFilter = pageColorFilter,
+                    alignment = Alignment.TopCenter,
+                    contentScale = ContentScale.Fit,
                     modifier = Modifier
                         .fillMaxSize()
                         .drawWithContent {
@@ -1146,6 +1188,8 @@ private fun PageVersoSheet(
                 Image(
                     bitmap = versoImageBitmap,
                     contentDescription = null,
+                    alignment = Alignment.TopCenter,
+                    contentScale = ContentScale.Fit,
                     modifier = Modifier
                         .fillMaxSize()
                         .graphicsLayer {

@@ -236,13 +236,14 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
     // =========================================================================
     val lightSensorManager = LightSensorManager(application)
 
-    private val _isAutoBrightnessEnabled = MutableStateFlow(readerPrefs.getBoolean("pref_auto_brightness_enabled", false))
+    // Default to FALSE so opening the app NEVER automatically increases screen brightness!
+    private val _isAutoBrightnessEnabled = MutableStateFlow(readerPrefs.getBoolean("pref_auto_brightness_user_enabled_v3", false))
     val isAutoBrightnessEnabled: StateFlow<Boolean> = _isAutoBrightnessEnabled.asStateFlow()
 
-    private val _useCustomBrightness = MutableStateFlow(readerPrefs.getBoolean("pref_use_custom_brightness", false))
+    private val _useCustomBrightness = MutableStateFlow(readerPrefs.getBoolean("pref_use_custom_brightness_user_v3", false))
     val useCustomBrightness: StateFlow<Boolean> = _useCustomBrightness.asStateFlow()
 
-    private val _manualBrightness = MutableStateFlow(readerPrefs.getFloat("pref_manual_brightness", 0.45f))
+    private val _manualBrightness = MutableStateFlow(readerPrefs.getFloat("pref_manual_brightness_user_v3", 0.40f))
     val manualBrightness: StateFlow<Float> = _manualBrightness.asStateFlow()
 
     private val _autoComplementDarkTheme = MutableStateFlow(readerPrefs.getBoolean("pref_auto_complement_dark_theme", false))
@@ -252,11 +253,12 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
     val ambientLightLevel: StateFlow<AmbientLightLevel> = lightSensorManager.ambientLightLevel
     val isLightSensorAvailable: Boolean = lightSensorManager.isSensorAvailable
 
+    // On app startup, default to -1.0f (BRIGHTNESS_OVERRIDE_NONE) so Android system controls brightness naturally!
     private val _currentAppBrightness = MutableStateFlow(
-        if (readerPrefs.getBoolean("pref_auto_brightness_enabled", false)) {
+        if (readerPrefs.getBoolean("pref_auto_brightness_user_enabled_v3", false)) {
             lightSensorManager.calculatedBrightness.value
-        } else if (readerPrefs.getBoolean("pref_use_custom_brightness", false)) {
-            readerPrefs.getFloat("pref_manual_brightness", 0.45f)
+        } else if (readerPrefs.getBoolean("pref_use_custom_brightness_user_v3", false)) {
+            readerPrefs.getFloat("pref_manual_brightness_user_v3", 0.40f)
         } else {
             -1f // BRIGHTNESS_OVERRIDE_NONE: keeps user's system brightness completely untouched!
         }
@@ -265,10 +267,10 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setAutoBrightnessEnabled(enabled: Boolean) {
         _isAutoBrightnessEnabled.value = enabled
-        readerPrefs.edit().putBoolean("pref_auto_brightness_enabled", enabled).apply()
+        readerPrefs.edit().putBoolean("pref_auto_brightness_user_enabled_v3", enabled).apply()
         if (enabled) {
             _useCustomBrightness.value = false
-            readerPrefs.edit().putBoolean("pref_use_custom_brightness", false).apply()
+            readerPrefs.edit().putBoolean("pref_use_custom_brightness_user_v3", false).apply()
             lightSensorManager.startListening()
             _currentAppBrightness.value = lightSensorManager.calculatedBrightness.value
             _statusMessage.value = "Auto-brightness: ON (Adapts to ambient light)"
@@ -276,7 +278,7 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
             lightSensorManager.stopListening()
             if (_useCustomBrightness.value) {
                 _currentAppBrightness.value = _manualBrightness.value
-                _statusMessage.value = "Auto-brightness: OFF (Manual brightness active)"
+                _statusMessage.value = "Auto-brightness: OFF"
             } else {
                 _currentAppBrightness.value = -1f // Return to normal system brightness!
                 _statusMessage.value = "Auto-brightness: OFF (System brightness restored)"
@@ -289,17 +291,15 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
         _manualBrightness.value = clamped
         _useCustomBrightness.value = true
         readerPrefs.edit()
-            .putFloat("pref_manual_brightness", clamped)
-            .putBoolean("pref_use_custom_brightness", true)
+            .putFloat("pref_manual_brightness_user_v3", clamped)
+            .putBoolean("pref_use_custom_brightness_user_v3", true)
             .apply()
 
         // When user manually lowers or adjusts brightness, ALWAYS disable auto-brightness
-        // so the sensor will never overwrite or increase the user's manual brightness!
-        if (_isAutoBrightnessEnabled.value) {
-            _isAutoBrightnessEnabled.value = false
-            readerPrefs.edit().putBoolean("pref_auto_brightness_enabled", false).apply()
-            lightSensorManager.stopListening()
-        }
+        // and stop listening to the light sensor so it NEVER increases again!
+        _isAutoBrightnessEnabled.value = false
+        readerPrefs.edit().putBoolean("pref_auto_brightness_user_enabled_v3", false).apply()
+        lightSensorManager.stopListening()
 
         _currentAppBrightness.value = clamped
     }
@@ -308,12 +308,12 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
         _isAutoBrightnessEnabled.value = false
         _useCustomBrightness.value = false
         readerPrefs.edit()
-            .putBoolean("pref_auto_brightness_enabled", false)
-            .putBoolean("pref_use_custom_brightness", false)
+            .putBoolean("pref_auto_brightness_user_enabled_v3", false)
+            .putBoolean("pref_use_custom_brightness_user_v3", false)
             .apply()
         lightSensorManager.stopListening()
         _currentAppBrightness.value = -1f
-        _statusMessage.value = "Screen Brightness: Restored to System Default"
+        _statusMessage.value = "Screen Brightness: System Default"
     }
 
     fun setAutoComplementDarkTheme(enabled: Boolean) {
@@ -340,9 +340,11 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
             appUpdateManager.checkForUpdates(forceCheck = false)
         }
 
-        // Initialize light sensor and auto-brightness reactive loop
+        // Initialize light sensor and auto-brightness reactive loop ONLY if explicitly enabled
         if (_isAutoBrightnessEnabled.value) {
             lightSensorManager.startListening()
+        } else {
+            lightSensorManager.stopListening()
         }
 
         viewModelScope.launch {
