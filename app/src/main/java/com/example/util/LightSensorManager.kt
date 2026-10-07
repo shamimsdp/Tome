@@ -8,6 +8,7 @@ import android.hardware.SensorManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlin.math.abs
 import kotlin.math.log10
 import kotlin.math.max
 
@@ -49,10 +50,10 @@ class LightSensorManager(context: Context) : SensorEventListener {
 
     val isSensorAvailable: Boolean = lightSensor != null
 
-    private val _currentLux = MutableStateFlow(120f) // reasonable indoor default
+    private val _currentLux = MutableStateFlow(100f) // reasonable indoor default
     val currentLux: StateFlow<Float> = _currentLux.asStateFlow()
 
-    private val _calculatedBrightness = MutableStateFlow(0.5f)
+    private val _calculatedBrightness = MutableStateFlow(0.35f)
     val calculatedBrightness: StateFlow<Float> = _calculatedBrightness.asStateFlow()
 
     private val _ambientLightLevel = MutableStateFlow(AmbientLightLevel.NORMAL)
@@ -62,7 +63,7 @@ class LightSensorManager(context: Context) : SensorEventListener {
     private var simulatedLux: Float? = null
 
     // Exponential moving average filter to prevent jitter when user shifts posture
-    private var smoothedLux = 120f
+    private var smoothedLux = 100f
 
     fun startListening() {
         if (isListening || lightSensor == null || sensorManager == null) return
@@ -100,9 +101,15 @@ class LightSensorManager(context: Context) : SensorEventListener {
     }
 
     private fun processNewLux(rawLux: Float) {
-        // Apply low-pass smoothing (alpha 0.25)
-        smoothedLux = smoothedLux * 0.75f + rawLux * 0.25f
+        // Apply low-pass smoothing (alpha 0.20)
+        smoothedLux = smoothedLux * 0.80f + rawLux * 0.20f
         val displayLux = max(0f, smoothedLux)
+        
+        // Hysteresis: only update if change is noticeable (prevents constant brightness hunting)
+        if (abs(displayLux - _currentLux.value) < 6f && _currentLux.value > 0f) {
+            return
+        }
+        
         _currentLux.value = displayLux
 
         // Determine ambient category
@@ -113,11 +120,7 @@ class LightSensorManager(context: Context) : SensorEventListener {
             else -> AmbientLightLevel.BRIGHT
         }
 
-        // Map Lux exponentially to logarithmic perception of human vision:
-        // Lux 0..10 -> brightness 0.12..0.22
-        // Lux 10..100 -> brightness 0.22..0.45
-        // Lux 100..1000 -> brightness 0.45..0.80
-        // Lux 1000..10000+ -> brightness 0.80..1.00
+        // Map Lux to comfortable reading brightness (never blinding, max 0.80f)
         val targetBrightness = computeBrightnessFromLux(displayLux)
         _calculatedBrightness.value = targetBrightness
     }
@@ -125,25 +128,25 @@ class LightSensorManager(context: Context) : SensorEventListener {
     companion object {
         fun computeBrightnessFromLux(lux: Float): Float {
             return when {
-                lux <= 1f -> 0.10f
+                lux <= 1f -> 0.08f
                 lux <= 15f -> {
-                    // 0.10f to 0.22f
-                    0.10f + (lux / 15f) * 0.12f
+                    // 0.08f to 0.20f (comfortable night reading)
+                    0.08f + (lux / 15f) * 0.12f
                 }
                 lux <= 150f -> {
-                    // 0.22f to 0.48f
-                    0.22f + ((lux - 15f) / 135f) * 0.26f
+                    // 0.20f to 0.38f (balanced cozy room)
+                    0.20f + ((lux - 15f) / 135f) * 0.18f
                 }
                 lux <= 1000f -> {
-                    // 0.48f to 0.82f
-                    0.48f + ((lux - 150f) / 850f) * 0.34f
+                    // 0.38f to 0.62f (well-lit daylight room)
+                    0.38f + ((lux - 150f) / 850f) * 0.24f
                 }
                 else -> {
-                    // 0.82f to 1.0f
+                    // 0.62f to 0.80f (outdoor / direct light, capped at 0.80 to avoid blinding)
                     val highFactor = ((log10(max(1000f, lux)) - 3f) / 2f).coerceIn(0f, 1f)
-                    0.82f + highFactor * 0.18f
+                    0.62f + highFactor * 0.18f
                 }
-            }.coerceIn(0.08f, 1.0f)
+            }.coerceIn(0.06f, 0.80f)
         }
     }
 }

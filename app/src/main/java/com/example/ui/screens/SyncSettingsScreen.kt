@@ -601,7 +601,13 @@ fun SyncSettingsScreen(
                                     fontWeight = FontWeight.Medium
                                 )
                                 Text(
-                                    text = "${((if (isAutoBrightnessEnabled) currentAppBrightness else manualBrightness) * 100).toInt()}%",
+                                    text = if (isAutoBrightnessEnabled) {
+                                        "${(currentAppBrightness * 100).toInt()}% (Auto)"
+                                    } else if (currentAppBrightness > 0f) {
+                                        "${(manualBrightness * 100).toInt()}% (Manual)"
+                                    } else {
+                                        "System Default"
+                                    },
                                     style = MaterialTheme.typography.bodySmall,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.primary
@@ -619,14 +625,11 @@ fun SyncSettingsScreen(
                                     modifier = Modifier.size(18.dp)
                                 )
                                 Slider(
-                                    value = if (isAutoBrightnessEnabled) currentAppBrightness else manualBrightness,
+                                    value = if (isAutoBrightnessEnabled) currentAppBrightness.coerceIn(0.05f, 1.0f) else manualBrightness,
                                     onValueChange = {
-                                        if (isAutoBrightnessEnabled) {
-                                            viewModel.setAutoBrightnessEnabled(false)
-                                        }
                                         viewModel.setManualBrightness(it)
                                     },
-                                    valueRange = 0.08f..1.0f,
+                                    valueRange = 0.05f..1.0f,
                                     modifier = Modifier
                                         .weight(1f)
                                         .padding(horizontal = 8.dp)
@@ -638,6 +641,18 @@ fun SyncSettingsScreen(
                                     tint = MaterialTheme.colorScheme.primary,
                                     modifier = Modifier.size(20.dp)
                                 )
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.End
+                            ) {
+                                TextButton(
+                                    onClick = { viewModel.resetToSystemBrightness() },
+                                    modifier = Modifier.testTag("reset_system_brightness_btn")
+                                ) {
+                                    Text("Reset to System Default", style = MaterialTheme.typography.labelSmall)
+                                }
                             }
                         }
 

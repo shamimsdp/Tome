@@ -9,10 +9,12 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -107,6 +109,7 @@ fun ReaderScreen(
     val isPageFlipEnabled by viewModel.isPageFlipEnabled.collectAsState()
     val lastPageTurnDelta by viewModel.lastPageTurnDelta.collectAsState()
     val isAutoBrightnessEnabled by viewModel.isAutoBrightnessEnabled.collectAsState()
+    val currentAppBrightness by viewModel.currentAppBrightness.collectAsState()
 
     // Search state
     val isSearchOpen by viewModel.searchResults.collectAsState()
@@ -166,6 +169,7 @@ fun ReaderScreen(
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         modifier = Modifier
             .fillMaxSize()
             .testTag("reader_screen")
@@ -173,7 +177,6 @@ fun ReaderScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
                 .background(pageBackground)
         ) {
             // Main Book Page View
@@ -231,7 +234,9 @@ fun ReaderScreen(
                 visible = isControlsVisible && !isSearchActive,
                 enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
                 exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut(),
-                modifier = Modifier.align(Alignment.TopCenter)
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .statusBarsPadding()
             ) {
                 ReadingTopBar(
                     title = document.title,
@@ -270,7 +275,10 @@ fun ReaderScreen(
                     isDarkTheme = isDarkTheme,
                     onToggleDarkTheme = { viewModel.toggleDarkTheme() },
                     isAutoBrightnessEnabled = isAutoBrightnessEnabled,
-                    onToggleAutoBrightness = { viewModel.setAutoBrightnessEnabled(!isAutoBrightnessEnabled) }
+                    onToggleAutoBrightness = { viewModel.setAutoBrightnessEnabled(!isAutoBrightnessEnabled) },
+                    currentBrightness = currentAppBrightness,
+                    onBrightnessChange = { viewModel.setManualBrightness(it) },
+                    onResetSystemBrightness = { viewModel.resetToSystemBrightness() }
                 )
             }
 

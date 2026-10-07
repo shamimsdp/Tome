@@ -236,13 +236,16 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
     // =========================================================================
     val lightSensorManager = LightSensorManager(application)
 
-    private val _isAutoBrightnessEnabled = MutableStateFlow(readerPrefs.getBoolean("pref_auto_brightness_enabled", true))
+    private val _isAutoBrightnessEnabled = MutableStateFlow(readerPrefs.getBoolean("pref_auto_brightness_enabled", false))
     val isAutoBrightnessEnabled: StateFlow<Boolean> = _isAutoBrightnessEnabled.asStateFlow()
 
-    private val _manualBrightness = MutableStateFlow(readerPrefs.getFloat("pref_manual_brightness", 0.65f))
+    private val _useCustomBrightness = MutableStateFlow(readerPrefs.getBoolean("pref_use_custom_brightness", false))
+    val useCustomBrightness: StateFlow<Boolean> = _useCustomBrightness.asStateFlow()
+
+    private val _manualBrightness = MutableStateFlow(readerPrefs.getFloat("pref_manual_brightness", 0.45f))
     val manualBrightness: StateFlow<Float> = _manualBrightness.asStateFlow()
 
-    private val _autoComplementDarkTheme = MutableStateFlow(readerPrefs.getBoolean("pref_auto_complement_dark_theme", true))
+    private val _autoComplementDarkTheme = MutableStateFlow(readerPrefs.getBoolean("pref_auto_complement_dark_theme", false))
     val autoComplementDarkTheme: StateFlow<Boolean> = _autoComplementDarkTheme.asStateFlow()
 
     val currentLux: StateFlow<Float> = lightSensorManager.currentLux
@@ -250,10 +253,13 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
     val isLightSensorAvailable: Boolean = lightSensorManager.isSensorAvailable
 
     private val _currentAppBrightness = MutableStateFlow(
-        if (readerPrefs.getBoolean("pref_auto_brightness_enabled", true))
+        if (readerPrefs.getBoolean("pref_auto_brightness_enabled", false)) {
             lightSensorManager.calculatedBrightness.value
-        else
-            readerPrefs.getFloat("pref_manual_brightness", 0.65f)
+        } else if (readerPrefs.getBoolean("pref_use_custom_brightness", false)) {
+            readerPrefs.getFloat("pref_manual_brightness", 0.45f)
+        } else {
+            -1f // BRIGHTNESS_OVERRIDE_NONE: keeps user's system brightness completely untouched!
+        }
     )
     val currentAppBrightness: StateFlow<Float> = _currentAppBrightness.asStateFlow()
 
@@ -261,23 +267,53 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
         _isAutoBrightnessEnabled.value = enabled
         readerPrefs.edit().putBoolean("pref_auto_brightness_enabled", enabled).apply()
         if (enabled) {
+            _useCustomBrightness.value = false
+            readerPrefs.edit().putBoolean("pref_use_custom_brightness", false).apply()
             lightSensorManager.startListening()
             _currentAppBrightness.value = lightSensorManager.calculatedBrightness.value
-            _statusMessage.value = "Auto-brightness: ON (Light sensor active)"
+            _statusMessage.value = "Auto-brightness: ON (Adapts to ambient light)"
         } else {
             lightSensorManager.stopListening()
-            _currentAppBrightness.value = _manualBrightness.value
-            _statusMessage.value = "Auto-brightness: OFF (Manual control)"
+            if (_useCustomBrightness.value) {
+                _currentAppBrightness.value = _manualBrightness.value
+                _statusMessage.value = "Auto-brightness: OFF (Manual brightness active)"
+            } else {
+                _currentAppBrightness.value = -1f // Return to normal system brightness!
+                _statusMessage.value = "Auto-brightness: OFF (System brightness restored)"
+            }
         }
     }
 
     fun setManualBrightness(brightness: Float) {
-        val clamped = brightness.coerceIn(0.08f, 1.0f)
+        val clamped = brightness.coerceIn(0.05f, 1.0f)
         _manualBrightness.value = clamped
-        readerPrefs.edit().putFloat("pref_manual_brightness", clamped).apply()
-        if (!_isAutoBrightnessEnabled.value) {
-            _currentAppBrightness.value = clamped
+        _useCustomBrightness.value = true
+        readerPrefs.edit()
+            .putFloat("pref_manual_brightness", clamped)
+            .putBoolean("pref_use_custom_brightness", true)
+            .apply()
+
+        // When user manually lowers or adjusts brightness, ALWAYS disable auto-brightness
+        // so the sensor will never overwrite or increase the user's manual brightness!
+        if (_isAutoBrightnessEnabled.value) {
+            _isAutoBrightnessEnabled.value = false
+            readerPrefs.edit().putBoolean("pref_auto_brightness_enabled", false).apply()
+            lightSensorManager.stopListening()
         }
+
+        _currentAppBrightness.value = clamped
+    }
+
+    fun resetToSystemBrightness() {
+        _isAutoBrightnessEnabled.value = false
+        _useCustomBrightness.value = false
+        readerPrefs.edit()
+            .putBoolean("pref_auto_brightness_enabled", false)
+            .putBoolean("pref_use_custom_brightness", false)
+            .apply()
+        lightSensorManager.stopListening()
+        _currentAppBrightness.value = -1f
+        _statusMessage.value = "Screen Brightness: Restored to System Default"
     }
 
     fun setAutoComplementDarkTheme(enabled: Boolean) {

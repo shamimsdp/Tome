@@ -72,7 +72,12 @@ class MainActivity : ComponentActivity() {
             LaunchedEffect(currentBrightness) {
                 val window = this@MainActivity.window
                 val layoutParams = window.attributes
-                layoutParams.screenBrightness = currentBrightness.coerceIn(0.05f, 1.0f)
+                if (currentBrightness in 0.05f..1.0f) {
+                    layoutParams.screenBrightness = currentBrightness.coerceIn(0.05f, 1.0f)
+                } else {
+                    // BRIGHTNESS_OVERRIDE_NONE (-1.0f): lets Android system control brightness naturally
+                    layoutParams.screenBrightness = android.view.WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+                }
                 window.attributes = layoutParams
             }
 
@@ -160,13 +165,14 @@ fun MainAppContent(viewModel: PdfViewModel) {
                     )
                 }
             },
+            contentWindowInsets = androidx.compose.foundation.layout.WindowInsets(0, 0, 0, 0),
             modifier = Modifier.fillMaxSize()
         ) { innerPadding ->
             Crossfade(
                 targetState = selectedTab,
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(innerPadding),
+                    .padding(bottom = innerPadding.calculateBottomPadding()),
                 label = "tab_crossfade"
             ) { tab ->
                 when (tab) {

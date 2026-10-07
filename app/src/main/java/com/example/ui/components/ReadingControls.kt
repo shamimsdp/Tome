@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -44,6 +45,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.DropdownMenu
@@ -55,7 +57,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -107,9 +111,13 @@ fun ReadingTopBar(
     onToggleDarkTheme: () -> Unit = {},
     isAutoBrightnessEnabled: Boolean = false,
     onToggleAutoBrightness: () -> Unit = {},
+    currentBrightness: Float = -1f,
+    onBrightnessChange: (Float) -> Unit = {},
+    onResetSystemBrightness: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var themeMenuExpanded by remember { mutableStateOf(false) }
+    var brightnessMenuExpanded by remember { mutableStateOf(false) }
 
     Surface(
         modifier = modifier.fillMaxWidth(),
@@ -118,6 +126,7 @@ fun ReadingTopBar(
         shadowElevation = 4.dp
     ) {
         TopAppBar(
+            windowInsets = WindowInsets(0, 0, 0, 0),
             title = {
                 Column {
                     Text(
@@ -346,16 +355,123 @@ fun ReadingTopBar(
                     )
                 }
 
-                // Auto-Brightness (Light Sensor) quick toggle
-                IconButton(
-                    onClick = onToggleAutoBrightness,
-                    modifier = Modifier.testTag("reader_auto_brightness_toggle")
-                ) {
-                    Icon(
-                        imageVector = if (isAutoBrightnessEnabled) Icons.Default.BrightnessAuto else Icons.Default.Brightness6,
-                        contentDescription = if (isAutoBrightnessEnabled) "Auto-Brightness (Light Sensor): ON" else "Auto-Brightness: OFF",
-                        tint = if (isAutoBrightnessEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                // Brightness & Light Sensor control
+                Box {
+                    IconButton(
+                        onClick = { brightnessMenuExpanded = !brightnessMenuExpanded },
+                        modifier = Modifier.testTag("reader_brightness_button")
+                    ) {
+                        Icon(
+                            imageVector = if (isAutoBrightnessEnabled) Icons.Default.BrightnessAuto else Icons.Default.Brightness6,
+                            contentDescription = "Screen Brightness",
+                            tint = if (isAutoBrightnessEnabled || currentBrightness > 0f) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    DropdownMenu(
+                        expanded = brightnessMenuExpanded,
+                        onDismissRequest = { brightnessMenuExpanded = false },
+                        modifier = Modifier.width(280.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "Screen Brightness",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = if (isAutoBrightnessEnabled) {
+                                        "${(currentBrightness.coerceIn(0.05f, 1f) * 100).toInt()}% (Auto)"
+                                    } else if (currentBrightness > 0f) {
+                                        "${(currentBrightness * 100).toInt()}%"
+                                    } else {
+                                        "System"
+                                    },
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            // Manual Brightness Slider
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.DarkMode,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Slider(
+                                    value = if (currentBrightness > 0f) currentBrightness else 0.45f,
+                                    onValueChange = {
+                                        onBrightnessChange(it)
+                                    },
+                                    valueRange = 0.05f..1.0f,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .padding(horizontal = 6.dp)
+                                        .testTag("reader_brightness_slider")
+                                )
+                                Icon(
+                                    imageVector = Icons.Default.WbSunny,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp),
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            // Auto-Brightness Switch
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Default.BrightnessAuto,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp),
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "Auto-Brightness",
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                }
+                                Switch(
+                                    checked = isAutoBrightnessEnabled,
+                                    onCheckedChange = {
+                                        onToggleAutoBrightness()
+                                    },
+                                    modifier = Modifier.testTag("reader_auto_brightness_toggle")
+                                )
+                            }
+
+                            // Reset to system brightness
+                            if (currentBrightness > 0f || isAutoBrightnessEnabled) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                TextButton(
+                                    onClick = {
+                                        onResetSystemBrightness()
+                                        brightnessMenuExpanded = false
+                                    },
+                                    modifier = Modifier.align(Alignment.End)
+                                ) {
+                                    Text("Reset to System", style = MaterialTheme.typography.labelSmall)
+                                }
+                            }
+                        }
+                    }
                 }
 
                 // Page flip animation toggle button
