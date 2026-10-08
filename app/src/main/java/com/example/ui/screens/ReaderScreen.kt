@@ -111,6 +111,7 @@ fun ReaderScreen(
 
     // Page flip animation state
     val isPageFlipEnabled by viewModel.isPageFlipEnabled.collectAsState()
+    val pageFlipStyle by viewModel.pageFlipStyle.collectAsState()
     val lastPageTurnDelta by viewModel.lastPageTurnDelta.collectAsState()
     val isAutoBrightnessEnabled by viewModel.isAutoBrightnessEnabled.collectAsState()
     val currentAppBrightness by viewModel.currentAppBrightness.collectAsState()
@@ -213,6 +214,7 @@ fun ReaderScreen(
                 isReadingRulerEnabled = isReadingRulerEnabled,
                 readingRulerRatio = readingRulerRatio,
                 isPageFlipEnabled = isPageFlipEnabled,
+                pageFlipStyle = pageFlipStyle,
                 pageTurnDelta = lastPageTurnDelta,
                 pageElements = currentElements,
                 isEditElementsMode = isEditElementsMode,
@@ -267,6 +269,7 @@ fun ReaderScreen(
                     sessionDurationText = sessionDurationText,
                     isSessionTimerRunning = isSessionTimerRunning,
                     isPageFlipEnabled = isPageFlipEnabled,
+                    pageFlipStyle = pageFlipStyle,
                     isEditElementsMode = isEditElementsMode,
                     onBack = {
                         viewModel.closeDocument()
@@ -389,6 +392,7 @@ fun ReaderScreen(
                     isReadingRulerEnabled = isReadingRulerEnabled,
                     sessionDurationText = sessionDurationText,
                     isPageFlipEnabled = isPageFlipEnabled,
+                    pageFlipStyle = pageFlipStyle,
                     onOpenSessionTimer = { viewModel.openReadingSessionSheet() },
                     onTogglePageFlip = { viewModel.togglePageFlip() },
                     onPageChange = { page -> viewModel.goToPage(page) },

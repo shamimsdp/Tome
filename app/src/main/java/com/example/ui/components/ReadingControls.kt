@@ -78,6 +78,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.model.PageFlipStyle
 import com.example.data.model.ReadingTheme
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -92,6 +93,7 @@ fun ReadingTopBar(
     sessionDurationText: String = "",
     isSessionTimerRunning: Boolean = true,
     isPageFlipEnabled: Boolean = true,
+    pageFlipStyle: PageFlipStyle = PageFlipStyle.BOOK_3D,
     isEditElementsMode: Boolean = false,
     onBack: () -> Unit,
     onToggleBookmark: () -> Unit,
@@ -479,8 +481,8 @@ fun ReadingTopBar(
                 IconButton(onClick = onTogglePageFlip, modifier = Modifier.testTag("reader_page_flip_toggle")) {
                     Icon(
                         imageVector = Icons.Default.AutoStories,
-                        contentDescription = if (isPageFlipEnabled) "Page Flip Animation: ON" else "Page Flip Animation: OFF",
-                        tint = if (isPageFlipEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        contentDescription = "Animation: ${pageFlipStyle.displayName}",
+                        tint = if (pageFlipStyle != PageFlipStyle.NONE) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
 
@@ -513,6 +515,7 @@ fun ReadingBottomBar(
     isReadingRulerEnabled: Boolean,
     sessionDurationText: String = "",
     isPageFlipEnabled: Boolean = true,
+    pageFlipStyle: PageFlipStyle = PageFlipStyle.BOOK_3D,
     onOpenSessionTimer: () -> Unit = {},
     onTogglePageFlip: () -> Unit = {},
     onPageChange: (Int) -> Unit,
@@ -619,20 +622,36 @@ fun ReadingBottomBar(
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(
-                        onClick = onTogglePageFlip,
+                    Row(
                         modifier = Modifier
-                            .size(36.dp)
-                            .testTag("toggle_page_flip_button")
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable(onClick = onTogglePageFlip)
+                            .background(
+                                if (pageFlipStyle != PageFlipStyle.NONE)
+                                    MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+                                else
+                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                            )
+                            .padding(horizontal = 6.dp, vertical = 4.dp)
+                            .testTag("toggle_page_flip_button"),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
                             imageVector = Icons.Default.AutoStories,
-                            contentDescription = if (isPageFlipEnabled) "Page Flip Animation: ON" else "Page Flip Animation: OFF",
-                            tint = if (isPageFlipEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                            contentDescription = "Animation Style: ${pageFlipStyle.displayName}",
+                            tint = if (pageFlipStyle != PageFlipStyle.NONE) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = pageFlipStyle.shortLabel,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Medium,
+                            color = if (pageFlipStyle != PageFlipStyle.NONE) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
 
-                    Spacer(modifier = Modifier.width(4.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
 
                     IconButton(
                         onClick = onToggleReadingRuler,

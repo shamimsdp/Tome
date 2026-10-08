@@ -88,6 +88,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.AnnotationEntity
 import com.example.data.model.PageElementEntity
+import com.example.data.model.PageFlipStyle
 import com.example.data.model.ReadingTheme
 import com.example.engine.PdfEngine
 import com.example.engine.SearchMatch
@@ -194,6 +195,7 @@ fun BookPageView(
     isReadingRulerEnabled: Boolean,
     readingRulerRatio: Float,
     isPageFlipEnabled: Boolean = true,
+    pageFlipStyle: PageFlipStyle = PageFlipStyle.BOOK_3D,
     pageTurnDelta: Int = 1,
     pageElements: List<PageElementEntity> = emptyList(),
     isEditElementsMode: Boolean = false,
@@ -212,6 +214,7 @@ fun BookPageView(
     val flipProgress = remember { Animatable(0f) }
     var isFlipping by remember { mutableStateOf(false) }
     var flipDirection by remember { mutableStateOf(FlipDirection.NEXT) }
+    var displayedPageIndex by remember { mutableIntStateOf(pageIndex) }
     var flipSourcePage by remember { mutableIntStateOf(pageIndex) }
     var flipTargetPage by remember { mutableIntStateOf(pageIndex) }
     var pendingTargetPage by remember { mutableStateOf<Int?>(null) }
@@ -222,18 +225,45 @@ fun BookPageView(
     val currentHighlightMode by rememberUpdatedState(isHighlightMode)
     val currentEditElementsMode by rememberUpdatedState(isEditElementsMode)
     val currentPageFlipEnabled by rememberUpdatedState(isPageFlipEnabled)
+    val currentPageFlipStyle by rememberUpdatedState(pageFlipStyle)
     val currentTotalPages by rememberUpdatedState(totalPages)
     val currentOnTapLeft by rememberUpdatedState(onTapLeft)
     val currentOnTapRight by rememberUpdatedState(onTapRight)
     val currentOnTapCenter by rememberUpdatedState(onTapCenter)
     val currentOnAddHighlightAtRatio by rememberUpdatedState(onAddHighlightAtRatio)
 
-    // Reset surface transformation matrix whenever user navigates to a new page
+    // Reset surface transformation matrix whenever user navigates to a new page,
+    // and smoothly animate single page turns from external navigation (buttons, scrubber)
     LaunchedEffect(pageIndex) {
         if (pendingTargetPage == pageIndex) {
             pendingTargetPage = null
         }
         surfaceMatrix.reset()
+
+        if (isFlipping) {
+            return@LaunchedEffect
+        }
+
+        if (displayedPageIndex != pageIndex) {
+            val delta = pageIndex - displayedPageIndex
+            if (currentPageFlipStyle != PageFlipStyle.NONE && currentPageFlipEnabled && abs(delta) == 1) {
+                val dir = if (delta > 0) FlipDirection.NEXT else FlipDirection.PREV
+                flipSourcePage = displayedPageIndex
+                flipTargetPage = pageIndex
+                flipDirection = dir
+                isFlipping = true
+                flipProgress.snapTo(0f)
+                flipProgress.animateTo(
+                    targetValue = 1f,
+                    animationSpec = tween(durationMillis = 320, easing = FastOutSlowInEasing)
+                )
+                displayedPageIndex = pageIndex
+                isFlipping = false
+                flipProgress.snapTo(0f)
+            } else {
+                displayedPageIndex = pageIndex
+            }
+        }
     }
 
     // Proactively pre-render adjacent pages into memory so they are guaranteed ready for flip
@@ -311,7 +341,7 @@ fun BookPageView(
                     isFlipping && flipDirection == FlipDirection.NEXT -> flipTargetPage
                     isFlipping && flipDirection == FlipDirection.PREV -> flipSourcePage
                     pendingTargetPage != null -> pendingTargetPage!!
-                    else -> pageIndex
+                    else -> displayedPageIndex
                 }
 
                 val baseBitmap = getPageBitmap(basePage)
@@ -339,183 +369,434 @@ fun BookPageView(
                 )
 
                 // =========================================================================
-                // 2. AUTHENTIC 3D PAGE CURL (harism/android-pagecurl paper curl physics)
-                // Peels the page smoothly across the screen like Harri Smått's pagecurl.
-                // As the page turns, the turning page curls over with a cylindrical roll,
-                // revealing the underlying page beneath, displaying the verso (backside)
-                // on the curled flap with specular 3D cylindrical shine, crease shadow,
-                // and authentic drop shadow cast onto the page beneath.
+                // 2. ULTRA-SATISFYING MULTI-STYLE PAGE TURN SYSTEM
+                // Features 3D Skeuomorphic Book Page Turn with perspective rotation,
+                // realistic paper curvature arch, specular sheen, dynamic drop shadows,
+                // authentic verso bleed-through, plus Paper Curl & Smooth Slide options.
                 // =========================================================================
                 if (isFlipping) {
                     val progress = flipProgress.value.coerceIn(0f, 1f)
-                    val curlIntensity = sin(progress * PI.toFloat())
-                    val turningPage = if (flipDirection == FlipDirection.NEXT) flipSourcePage else flipTargetPage
-                    val turningBitmap = getPageBitmap(turningPage)
                     val isNext = flipDirection == FlipDirection.NEXT
-                    val foldProgress = if (isNext) 1f - progress else progress
+                    val density = LocalDensity.current.density
+                    val bendIntensity = sin(progress * PI.toFloat())
 
-                    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-                        val densityFactor = LocalDensity.current.density
-                        val w = maxWidth.value * densityFactor
-                        val slant = 32f * curlIntensity
-                        val topX = (w * foldProgress + (if (isNext) slant else -slant)).coerceIn(0f, w)
-                        val bottomX = (w * foldProgress - (if (isNext) slant else -slant)).coerceIn(0f, w)
-                        val rollWidth = (w * progress * 0.40f + 32f).coerceAtMost(w * 0.45f)
-
-                        // 2a. Dynamic Drop Shadow cast from the curl cylinder onto the revealed underlying page
-                        if (curlIntensity > 0.005f) {
-                            Canvas(modifier = Modifier.fillMaxSize()) {
-                                val sDist = (44f * curlIntensity).coerceAtLeast(4f)
-                                val shadowAlpha = (0.40f * curlIntensity).coerceIn(0f, 0.42f)
-
-                                val shadowPath = Path().apply {
-                                    moveTo(topX, 0f)
-                                    lineTo(bottomX, size.height)
-                                    lineTo(bottomX + sDist, size.height)
-                                    lineTo(topX + sDist, 0f)
-                                    close()
-                                }
-                                drawPath(
-                                    path = shadowPath,
-                                    brush = Brush.horizontalGradient(
-                                        colors = listOf(
-                                            Color.Black.copy(alpha = shadowAlpha),
-                                            Color.Black.copy(alpha = shadowAlpha * 0.4f),
-                                            Color.Transparent
-                                        ),
-                                        startX = min(topX, bottomX),
-                                        endX = max(topX, bottomX) + sDist
+                    when (currentPageFlipStyle) {
+                        PageFlipStyle.BOOK_3D -> {
+                            // 2a. Dynamic Drop Shadow cast from the turning page onto the base page beneath
+                            if (bendIntensity > 0.005f) {
+                                Canvas(modifier = Modifier.fillMaxSize()) {
+                                    val sWidth = size.width * (0.16f + 0.36f * bendIntensity)
+                                    val shadowAlpha = (0.42f * bendIntensity).coerceIn(0f, 0.45f)
+                                    drawRect(
+                                        brush = Brush.horizontalGradient(
+                                            0.0f to Color.Black.copy(alpha = shadowAlpha),
+                                            0.35f to Color.Black.copy(alpha = shadowAlpha * 0.5f),
+                                            1.0f to Color.Transparent,
+                                            startX = 0f,
+                                            endX = sWidth
+                                        )
                                     )
-                                )
-                            }
-                        }
-
-                        // 2b. The Uncurled Flat Page (Clipped at the fold line)
-                        val uncurledFrontShape = GenericShape { size, _ ->
-                            moveTo(0f, 0f)
-                            lineTo(topX, 0f)
-                            lineTo(bottomX, size.height)
-                            lineTo(0f, size.height)
-                            close()
-                        }
-
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .clip(uncurledFrontShape)
-                        ) {
-                            SinglePageSheet(
-                                pageIndex = turningPage,
-                                renderedBitmap = turningBitmap,
-                                pdfEngine = pdfEngine,
-                                readingTheme = readingTheme,
-                                isDarkTheme = isDarkTheme,
-                                isBookmarked = isBookmarked && turningPage == pageIndex,
-                                annotations = if (turningPage == pageIndex) annotations else emptyList(),
-                                searchMatches = searchMatches,
-                                containerHeight = containerHeight,
-                                pageElements = if (turningPage == pageIndex) pageElements else emptyList(),
-                                isEditElementsMode = false,
-                                modifier = Modifier.fillMaxSize()
-                            )
-                        }
-
-                        // 2c. Curled Verso Flap (Backside of curling page with 3D paper roll)
-                        if (curlIntensity > 0.008f) {
-                            val flapShape = GenericShape { size, _ ->
-                                if (isNext) {
-                                    // Flap rolls to the left of the fold line
-                                    val leftTop = (topX - rollWidth).coerceAtLeast(0f)
-                                    val leftBottom = (bottomX - rollWidth).coerceAtLeast(0f)
-                                    moveTo(leftTop, 0f)
-                                    lineTo(topX, 0f)
-                                    lineTo(bottomX, size.height)
-                                    lineTo(leftBottom, size.height)
-                                    close()
-                                } else {
-                                    // Flap rolls to the right of the fold line
-                                    val rightTop = (topX + rollWidth).coerceAtMost(size.width)
-                                    val rightBottom = (bottomX + rollWidth).coerceAtMost(size.width)
-                                    moveTo(topX, 0f)
-                                    lineTo(rightTop, 0f)
-                                    lineTo(rightBottom, size.height)
-                                    lineTo(bottomX, size.height)
-                                    close()
                                 }
                             }
 
+                            // 2b. Gutter / Book Spine Crease Shadow
                             Box(
                                 modifier = Modifier
-                                    .fillMaxSize()
-                                    .clip(flapShape)
-                            ) {
-                                PageVersoSheet(
-                                    pageIndex = turningPage,
-                                    readingTheme = readingTheme,
-                                    frontBitmap = turningBitmap,
-                                    pdfEngine = pdfEngine,
-                                    modifier = Modifier.fillMaxSize()
-                                )
-
-                                // 3D Cylindrical Lighting & Specular Sheen (harism/android-pagecurl look)
-                                Canvas(modifier = Modifier.fillMaxSize()) {
-                                    val foldMidX = (topX + bottomX) * 0.5f
-
-                                    if (isNext) {
-                                        val flapApexX = foldMidX - rollWidth * 0.45f
-
-                                        // Specular highlight band along the roll cylinder
-                                        drawRect(
-                                            brush = Brush.horizontalGradient(
-                                                0.0f to Color.Transparent,
-                                                0.30f to Color.White.copy(alpha = 0.55f * curlIntensity),
-                                                0.50f to Color.White.copy(alpha = 0.70f * curlIntensity),
-                                                0.70f to Color.White.copy(alpha = 0.35f * curlIntensity),
-                                                1.0f to Color.Transparent,
-                                                startX = (flapApexX - 24f).coerceAtLeast(0f),
-                                                endX = flapApexX + 24f
+                                    .fillMaxHeight()
+                                    .width(18.dp)
+                                    .align(Alignment.CenterStart)
+                                    .background(
+                                        Brush.horizontalGradient(
+                                            colors = listOf(
+                                                Color.Black.copy(alpha = 0.22f),
+                                                Color.Black.copy(alpha = 0.06f),
+                                                Color.Transparent
                                             )
                                         )
+                                    )
+                            )
 
-                                        // Crease shadow right at the fold
-                                        drawRect(
-                                            brush = Brush.horizontalGradient(
-                                                0.0f to Color.Transparent,
-                                                0.60f to Color.Black.copy(alpha = 0.40f * curlIntensity),
-                                                1.0f to Color.Black.copy(alpha = 0.15f * curlIntensity),
-                                                startX = (foldMidX - 18f).coerceAtLeast(0f),
-                                                endX = foldMidX + 4f
-                                            )
+                            // 2c. The 3D Turning Leaf in flight (Pivoted at spine with true perspective)
+                            if (isNext) {
+                                val turningPage = flipSourcePage
+                                val turningBitmap = getPageBitmap(turningPage)
+
+                                if (progress < 0.5f) {
+                                    // Phase 1: Front face of turningPage rotates up from 0 to -90 deg
+                                    val rotY = -180f * progress
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .graphicsLayer {
+                                                transformOrigin = TransformOrigin(0f, 0.5f)
+                                                cameraDistance = 22f * density
+                                                rotationY = rotY
+                                                scaleX = 1f - bendIntensity * 0.12f
+                                                compositingStrategy = CompositingStrategy.Offscreen
+                                            }
+                                    ) {
+                                        SinglePageSheet(
+                                            pageIndex = turningPage,
+                                            renderedBitmap = turningBitmap,
+                                            pdfEngine = pdfEngine,
+                                            readingTheme = readingTheme,
+                                            isDarkTheme = isDarkTheme,
+                                            isBookmarked = isBookmarked && turningPage == pageIndex,
+                                            annotations = if (turningPage == pageIndex) annotations else emptyList(),
+                                            searchMatches = searchMatches,
+                                            containerHeight = containerHeight,
+                                            pageElements = if (turningPage == pageIndex) pageElements else emptyList(),
+                                            isEditElementsMode = false,
+                                            modifier = Modifier.fillMaxSize()
                                         )
-                                    } else {
-                                        val flapApexX = foldMidX + rollWidth * 0.45f
 
-                                        // Specular highlight band along the roll cylinder
-                                        drawRect(
-                                            brush = Brush.horizontalGradient(
-                                                0.0f to Color.Transparent,
-                                                0.30f to Color.White.copy(alpha = 0.55f * curlIntensity),
-                                                0.50f to Color.White.copy(alpha = 0.70f * curlIntensity),
-                                                0.70f to Color.White.copy(alpha = 0.35f * curlIntensity),
-                                                1.0f to Color.Transparent,
-                                                startX = flapApexX - 24f,
-                                                endX = (flapApexX + 24f).coerceAtMost(size.width)
-                                            )
+                                        // 3D Lighting falloff and specular sheen along curve crest
+                                        Canvas(modifier = Modifier.fillMaxSize()) {
+                                            val ambientAlpha = (progress * 2f).coerceIn(0f, 1f) * 0.38f
+                                            drawRect(color = Color.Black.copy(alpha = ambientAlpha))
+                                            if (bendIntensity > 0.01f) {
+                                                val crestX = size.width * (0.62f - 0.32f * progress)
+                                                val crestWidth = size.width * 0.35f
+                                                drawRect(
+                                                    brush = Brush.horizontalGradient(
+                                                        0.0f to Color.Transparent,
+                                                        0.5f to Color.White.copy(alpha = 0.35f * bendIntensity),
+                                                        1.0f to Color.Transparent,
+                                                        startX = (crestX - crestWidth * 0.5f).coerceAtLeast(0f),
+                                                        endX = (crestX + crestWidth * 0.5f).coerceAtMost(size.width)
+                                                    )
+                                                )
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    // Phase 2: Verso (Backside) rotates down from +90 to 0 deg
+                                    val rotY = 180f * (1f - progress)
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .graphicsLayer {
+                                                transformOrigin = TransformOrigin(0f, 0.5f)
+                                                cameraDistance = 22f * density
+                                                rotationY = rotY
+                                                scaleX = 1f - bendIntensity * 0.12f
+                                                compositingStrategy = CompositingStrategy.Offscreen
+                                            }
+                                    ) {
+                                        PageVersoSheet(
+                                            pageIndex = turningPage,
+                                            readingTheme = readingTheme,
+                                            frontBitmap = turningBitmap,
+                                            pdfEngine = pdfEngine,
+                                            modifier = Modifier.fillMaxSize()
                                         )
 
-                                        // Crease shadow right at the fold
-                                        drawRect(
+                                        // 3D Lighting brightens as verso settles flat
+                                        Canvas(modifier = Modifier.fillMaxSize()) {
+                                            val ambientAlpha = ((1f - progress) * 2f).coerceIn(0f, 1f) * 0.38f
+                                            drawRect(color = Color.Black.copy(alpha = ambientAlpha))
+                                            if (bendIntensity > 0.01f) {
+                                                val crestX = size.width * (0.35f + 0.32f * (1f - progress))
+                                                val crestWidth = size.width * 0.35f
+                                                drawRect(
+                                                    brush = Brush.horizontalGradient(
+                                                        0.0f to Color.Transparent,
+                                                        0.5f to Color.White.copy(alpha = 0.30f * bendIntensity),
+                                                        1.0f to Color.Transparent,
+                                                        startX = (crestX - crestWidth * 0.5f).coerceAtLeast(0f),
+                                                        endX = (crestX + crestWidth * 0.5f).coerceAtMost(size.width)
+                                                    )
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            } else {
+                                // Turning backward: flipTargetPage is turned from left onto flipSourcePage
+                                val turningPage = flipTargetPage
+                                val turningBitmap = getPageBitmap(turningPage)
+
+                                if (progress < 0.5f) {
+                                    // Phase 1: Verso rises from 0 to +90 deg
+                                    val rotY = 180f * progress
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .graphicsLayer {
+                                                transformOrigin = TransformOrigin(0f, 0.5f)
+                                                cameraDistance = 22f * density
+                                                rotationY = rotY
+                                                scaleX = 1f - bendIntensity * 0.12f
+                                                compositingStrategy = CompositingStrategy.Offscreen
+                                            }
+                                    ) {
+                                        PageVersoSheet(
+                                            pageIndex = turningPage,
+                                            readingTheme = readingTheme,
+                                            frontBitmap = turningBitmap,
+                                            pdfEngine = pdfEngine,
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+
+                                        Canvas(modifier = Modifier.fillMaxSize()) {
+                                            val ambientAlpha = (progress * 2f).coerceIn(0f, 1f) * 0.38f
+                                            drawRect(color = Color.Black.copy(alpha = ambientAlpha))
+                                            if (bendIntensity > 0.01f) {
+                                                val crestX = size.width * (0.35f + 0.32f * progress)
+                                                val crestWidth = size.width * 0.35f
+                                                drawRect(
+                                                    brush = Brush.horizontalGradient(
+                                                        0.0f to Color.Transparent,
+                                                        0.5f to Color.White.copy(alpha = 0.30f * bendIntensity),
+                                                        1.0f to Color.Transparent,
+                                                        startX = (crestX - crestWidth * 0.5f).coerceAtLeast(0f),
+                                                        endX = (crestX + crestWidth * 0.5f).coerceAtMost(size.width)
+                                                    )
+                                                )
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    // Phase 2: Front face settles down from -90 to 0 deg
+                                    val rotY = -180f * (1f - progress)
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .graphicsLayer {
+                                                transformOrigin = TransformOrigin(0f, 0.5f)
+                                                cameraDistance = 22f * density
+                                                rotationY = rotY
+                                                scaleX = 1f - bendIntensity * 0.12f
+                                                compositingStrategy = CompositingStrategy.Offscreen
+                                            }
+                                    ) {
+                                        SinglePageSheet(
+                                            pageIndex = turningPage,
+                                            renderedBitmap = turningBitmap,
+                                            pdfEngine = pdfEngine,
+                                            readingTheme = readingTheme,
+                                            isDarkTheme = isDarkTheme,
+                                            isBookmarked = isBookmarked && turningPage == pageIndex,
+                                            annotations = if (turningPage == pageIndex) annotations else emptyList(),
+                                            searchMatches = searchMatches,
+                                            containerHeight = containerHeight,
+                                            pageElements = if (turningPage == pageIndex) pageElements else emptyList(),
+                                            isEditElementsMode = false,
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+
+                                        Canvas(modifier = Modifier.fillMaxSize()) {
+                                            val ambientAlpha = ((1f - progress) * 2f).coerceIn(0f, 1f) * 0.38f
+                                            drawRect(color = Color.Black.copy(alpha = ambientAlpha))
+                                            if (bendIntensity > 0.01f) {
+                                                val crestX = size.width * (0.62f - 0.32f * (1f - progress))
+                                                val crestWidth = size.width * 0.35f
+                                                drawRect(
+                                                    brush = Brush.horizontalGradient(
+                                                        0.0f to Color.Transparent,
+                                                        0.5f to Color.White.copy(alpha = 0.32f * bendIntensity),
+                                                        1.0f to Color.Transparent,
+                                                        startX = (crestX - crestWidth * 0.5f).coerceAtLeast(0f),
+                                                        endX = (crestX + crestWidth * 0.5f).coerceAtMost(size.width)
+                                                    )
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        PageFlipStyle.PAGE_CURL -> {
+                            val turningPage = if (isNext) flipSourcePage else flipTargetPage
+                            val turningBitmap = getPageBitmap(turningPage)
+                            val foldProgress = if (isNext) 1f - progress else progress
+
+                            BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                                val w = maxWidth.value * density
+                                val slant = 36f * bendIntensity
+                                val topX = (w * foldProgress + (if (isNext) slant else -slant)).coerceIn(0f, w)
+                                val bottomX = (w * foldProgress - (if (isNext) slant else -slant)).coerceIn(0f, w)
+                                val rollWidth = (w * progress * 0.42f + 32f).coerceAtMost(w * 0.48f)
+
+                                // Dynamic drop shadow on underlying page
+                                if (bendIntensity > 0.005f) {
+                                    Canvas(modifier = Modifier.fillMaxSize()) {
+                                        val sDist = (48f * bendIntensity).coerceAtLeast(4f)
+                                        val shadowAlpha = (0.42f * bendIntensity).coerceIn(0f, 0.44f)
+                                        val shadowPath = Path().apply {
+                                            moveTo(topX, 0f)
+                                            lineTo(bottomX, size.height)
+                                            lineTo(bottomX + sDist, size.height)
+                                            lineTo(topX + sDist, 0f)
+                                            close()
+                                        }
+                                        drawPath(
+                                            path = shadowPath,
                                             brush = Brush.horizontalGradient(
-                                                0.0f to Color.Black.copy(alpha = 0.15f * curlIntensity),
-                                                0.40f to Color.Black.copy(alpha = 0.40f * curlIntensity),
-                                                1.0f to Color.Transparent,
-                                                startX = (foldMidX - 4f).coerceAtLeast(0f),
-                                                endX = foldMidX + 18f
+                                                colors = listOf(
+                                                    Color.Black.copy(alpha = shadowAlpha),
+                                                    Color.Black.copy(alpha = shadowAlpha * 0.4f),
+                                                    Color.Transparent
+                                                ),
+                                                startX = min(topX, bottomX),
+                                                endX = max(topX, bottomX) + sDist
                                             )
                                         )
                                     }
                                 }
+
+                                // Uncurled flat page portion
+                                val uncurledFrontShape = GenericShape { size, _ ->
+                                    moveTo(0f, 0f)
+                                    lineTo(topX, 0f)
+                                    lineTo(bottomX, size.height)
+                                    lineTo(0f, size.height)
+                                    close()
+                                }
+
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .clip(uncurledFrontShape)
+                                ) {
+                                    SinglePageSheet(
+                                        pageIndex = turningPage,
+                                        renderedBitmap = turningBitmap,
+                                        pdfEngine = pdfEngine,
+                                        readingTheme = readingTheme,
+                                        isDarkTheme = isDarkTheme,
+                                        isBookmarked = isBookmarked && turningPage == pageIndex,
+                                        annotations = if (turningPage == pageIndex) annotations else emptyList(),
+                                        searchMatches = searchMatches,
+                                        containerHeight = containerHeight,
+                                        pageElements = if (turningPage == pageIndex) pageElements else emptyList(),
+                                        isEditElementsMode = false,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                }
+
+                                // Curled Verso Flap with specular cylindrical cylinder
+                                if (bendIntensity > 0.008f) {
+                                    val flapShape = GenericShape { size, _ ->
+                                        if (isNext) {
+                                            val leftTop = (topX - rollWidth).coerceAtLeast(0f)
+                                            val leftBottom = (bottomX - rollWidth).coerceAtLeast(0f)
+                                            moveTo(leftTop, 0f)
+                                            lineTo(topX, 0f)
+                                            lineTo(bottomX, size.height)
+                                            lineTo(leftBottom, size.height)
+                                            close()
+                                        } else {
+                                            val rightTop = (topX + rollWidth).coerceAtMost(size.width)
+                                            val rightBottom = (bottomX + rollWidth).coerceAtMost(size.width)
+                                            moveTo(topX, 0f)
+                                            lineTo(rightTop, 0f)
+                                            lineTo(rightBottom, size.height)
+                                            lineTo(bottomX, size.height)
+                                            close()
+                                        }
+                                    }
+
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .clip(flapShape)
+                                    ) {
+                                        PageVersoSheet(
+                                            pageIndex = turningPage,
+                                            readingTheme = readingTheme,
+                                            frontBitmap = turningBitmap,
+                                            pdfEngine = pdfEngine,
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+
+                                        Canvas(modifier = Modifier.fillMaxSize()) {
+                                            val foldMidX = (topX + bottomX) * 0.5f
+                                            if (isNext) {
+                                                val flapApexX = foldMidX - rollWidth * 0.45f
+                                                drawRect(
+                                                    brush = Brush.horizontalGradient(
+                                                        0.0f to Color.Transparent,
+                                                        0.30f to Color.White.copy(alpha = 0.55f * bendIntensity),
+                                                        0.50f to Color.White.copy(alpha = 0.70f * bendIntensity),
+                                                        0.70f to Color.White.copy(alpha = 0.35f * bendIntensity),
+                                                        1.0f to Color.Transparent,
+                                                        startX = (flapApexX - 24f).coerceAtLeast(0f),
+                                                        endX = flapApexX + 24f
+                                                    )
+                                                )
+                                                drawRect(
+                                                    brush = Brush.horizontalGradient(
+                                                        0.0f to Color.Transparent,
+                                                        0.60f to Color.Black.copy(alpha = 0.40f * bendIntensity),
+                                                        1.0f to Color.Black.copy(alpha = 0.15f * bendIntensity),
+                                                        startX = (foldMidX - 18f).coerceAtLeast(0f),
+                                                        endX = foldMidX + 4f
+                                                    )
+                                                )
+                                            } else {
+                                                val flapApexX = foldMidX + rollWidth * 0.45f
+                                                drawRect(
+                                                    brush = Brush.horizontalGradient(
+                                                        0.0f to Color.Transparent,
+                                                        0.30f to Color.White.copy(alpha = 0.55f * bendIntensity),
+                                                        0.50f to Color.White.copy(alpha = 0.70f * bendIntensity),
+                                                        0.70f to Color.White.copy(alpha = 0.35f * bendIntensity),
+                                                        1.0f to Color.Transparent,
+                                                        startX = flapApexX - 24f,
+                                                        endX = (flapApexX + 24f).coerceAtMost(size.width)
+                                                    )
+                                                )
+                                                drawRect(
+                                                    brush = Brush.horizontalGradient(
+                                                        0.0f to Color.Black.copy(alpha = 0.15f * bendIntensity),
+                                                        0.40f to Color.Black.copy(alpha = 0.40f * bendIntensity),
+                                                        1.0f to Color.Transparent,
+                                                        startX = (foldMidX - 4f).coerceAtLeast(0f),
+                                                        endX = foldMidX + 18f
+                                                    )
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
                             }
+                        }
+                        PageFlipStyle.SLIDE -> {
+                            val turningPage = if (isNext) flipSourcePage else flipTargetPage
+                            val turningBitmap = getPageBitmap(turningPage)
+
+                            BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                                val w = maxWidth.value * density
+                                val offsetPx = if (isNext) -progress * w else (1f - progress) * w
+
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .graphicsLayer {
+                                            translationX = offsetPx
+                                            shadowElevation = 8f * density
+                                        }
+                                ) {
+                                    SinglePageSheet(
+                                        pageIndex = turningPage,
+                                        renderedBitmap = turningBitmap,
+                                        pdfEngine = pdfEngine,
+                                        readingTheme = readingTheme,
+                                        isDarkTheme = isDarkTheme,
+                                        isBookmarked = isBookmarked && turningPage == pageIndex,
+                                        annotations = if (turningPage == pageIndex) annotations else emptyList(),
+                                        searchMatches = searchMatches,
+                                        containerHeight = containerHeight,
+                                        pageElements = if (turningPage == pageIndex) pageElements else emptyList(),
+                                        isEditElementsMode = false,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                }
+                            }
+                        }
+                        PageFlipStyle.NONE -> {
+                            // Instant cut
                         }
                     }
                 }
@@ -584,14 +865,14 @@ fun BookPageView(
                                         if (!isDrag && abs(totalDragX) > touchSlop) {
                                             isDrag = true
                                             if (currentPageFlipEnabled && !isFlipping) {
-                                                if (totalDragX < 0 && pageIndex < currentTotalPages - 1) {
-                                                    flipSourcePage = pageIndex
-                                                    flipTargetPage = pageIndex + 1
+                                                if (totalDragX < 0 && displayedPageIndex < currentTotalPages - 1) {
+                                                    flipSourcePage = displayedPageIndex
+                                                    flipTargetPage = displayedPageIndex + 1
                                                     flipDirection = FlipDirection.NEXT
                                                     isFlipping = true
-                                                } else if (totalDragX > 0 && pageIndex > 0) {
-                                                    flipSourcePage = pageIndex
-                                                    flipTargetPage = pageIndex - 1
+                                                } else if (totalDragX > 0 && displayedPageIndex > 0) {
+                                                    flipSourcePage = displayedPageIndex
+                                                    flipTargetPage = displayedPageIndex - 1
                                                     flipDirection = FlipDirection.PREV
                                                     isFlipping = true
                                                 }
@@ -628,8 +909,8 @@ fun BookPageView(
                                         change.consume()
                                         val currentP = flipProgress.value
                                         coroutineScope.launch {
-                                            if (currentP > 0.22f) {
-                                                val remainingDuration = (220 * (1f - currentP)).toInt().coerceIn(80, 220)
+                                            if (currentP > 0.18f) {
+                                                val remainingDuration = (320 * (1f - currentP)).toInt().coerceIn(100, 320)
                                                 flipProgress.animateTo(
                                                     targetValue = 1f,
                                                     animationSpec = tween(
@@ -638,6 +919,7 @@ fun BookPageView(
                                                     )
                                                 )
                                                 val target = flipTargetPage
+                                                displayedPageIndex = target
                                                 pendingTargetPage = target
                                                 isFlipping = false
                                                 flipProgress.snapTo(0f)
@@ -650,7 +932,10 @@ fun BookPageView(
                                             } else {
                                                 flipProgress.animateTo(
                                                     targetValue = 0f,
-                                                    animationSpec = spring(stiffness = Spring.StiffnessMediumLow)
+                                                    animationSpec = spring(
+                                                        dampingRatio = Spring.DampingRatioMediumBouncy,
+                                                        stiffness = Spring.StiffnessMediumLow
+                                                    )
                                                 )
                                                 isFlipping = false
                                             }
@@ -669,18 +954,19 @@ fun BookPageView(
                                             when {
                                                 xRatio < 0.25f -> {
                                                     // Left edge tap: Previous Page
-                                                    if (currentPageFlipEnabled && pageIndex > 0 && !isFlipping) {
+                                                    if (currentPageFlipEnabled && displayedPageIndex > 0 && !isFlipping) {
                                                         coroutineScope.launch {
-                                                            flipSourcePage = pageIndex
-                                                            flipTargetPage = pageIndex - 1
+                                                            flipSourcePage = displayedPageIndex
+                                                            flipTargetPage = displayedPageIndex - 1
                                                             flipDirection = FlipDirection.PREV
                                                             isFlipping = true
                                                             flipProgress.snapTo(0f)
                                                             flipProgress.animateTo(
                                                                 targetValue = 1f,
-                                                                animationSpec = tween(durationMillis = 240, easing = FastOutSlowInEasing)
+                                                                animationSpec = tween(durationMillis = 320, easing = FastOutSlowInEasing)
                                                             )
                                                             val target = flipTargetPage
+                                                            displayedPageIndex = target
                                                             pendingTargetPage = target
                                                             isFlipping = false
                                                             flipProgress.snapTo(0f)
@@ -692,18 +978,19 @@ fun BookPageView(
                                                 }
                                                 xRatio > 0.75f -> {
                                                     // Right edge tap: Next Page
-                                                    if (currentPageFlipEnabled && pageIndex < currentTotalPages - 1 && !isFlipping) {
+                                                    if (currentPageFlipEnabled && displayedPageIndex < currentTotalPages - 1 && !isFlipping) {
                                                         coroutineScope.launch {
-                                                            flipSourcePage = pageIndex
-                                                            flipTargetPage = pageIndex + 1
+                                                            flipSourcePage = displayedPageIndex
+                                                            flipTargetPage = displayedPageIndex + 1
                                                             flipDirection = FlipDirection.NEXT
                                                             isFlipping = true
                                                             flipProgress.snapTo(0f)
                                                             flipProgress.animateTo(
                                                                 targetValue = 1f,
-                                                                animationSpec = tween(durationMillis = 240, easing = FastOutSlowInEasing)
+                                                                animationSpec = tween(durationMillis = 320, easing = FastOutSlowInEasing)
                                                             )
                                                             val target = flipTargetPage
+                                                            displayedPageIndex = target
                                                             pendingTargetPage = target
                                                             isFlipping = false
                                                             flipProgress.snapTo(0f)

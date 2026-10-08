@@ -11,6 +11,7 @@ import com.example.data.model.BookmarkEntity
 import com.example.data.model.CloudFile
 import com.example.data.model.DocumentEntity
 import com.example.data.model.PageElementEntity
+import com.example.data.model.PageFlipStyle
 import com.example.data.model.ReadingTheme
 import com.example.data.model.ThemeMode
 import com.example.data.model.SyncLogEntity
@@ -196,9 +197,21 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
     private val _isReadingSessionSheetOpen = MutableStateFlow(false)
     val isReadingSessionSheetOpen: StateFlow<Boolean> = _isReadingSessionSheetOpen.asStateFlow()
 
-    // Page flip animation preference & direction
+    // Page flip animation preference & style
     private val readerPrefs = application.getSharedPreferences("tome_reader_prefs", android.content.Context.MODE_PRIVATE)
-    private val _isPageFlipEnabled = MutableStateFlow(readerPrefs.getBoolean("pref_page_flip_enabled", true))
+    private val _pageFlipStyle = MutableStateFlow(
+        try {
+            val saved = readerPrefs.getString("pref_page_flip_style", PageFlipStyle.BOOK_3D.name) ?: PageFlipStyle.BOOK_3D.name
+            PageFlipStyle.valueOf(saved)
+        } catch (_: Exception) {
+            PageFlipStyle.BOOK_3D
+        }
+    )
+    val pageFlipStyle: StateFlow<PageFlipStyle> = _pageFlipStyle.asStateFlow()
+
+    private val _isPageFlipEnabled = MutableStateFlow(
+        readerPrefs.getBoolean("pref_page_flip_enabled", true) && _pageFlipStyle.value != PageFlipStyle.NONE
+    )
     val isPageFlipEnabled: StateFlow<Boolean> = _isPageFlipEnabled.asStateFlow()
 
     // System-wide Dark Theme mode (System Default, Light Mode, Dark Theme)
@@ -1094,15 +1107,36 @@ class PdfViewModel(application: Application) : AndroidViewModel(application) {
     val lastPageTurnDelta: StateFlow<Int> = _lastPageTurnDelta.asStateFlow()
 
     fun togglePageFlip() {
-        val newVal = !_isPageFlipEnabled.value
-        _isPageFlipEnabled.value = newVal
-        readerPrefs.edit().putBoolean("pref_page_flip_enabled", newVal).apply()
-        _statusMessage.value = if (newVal) "Page Flip Animation: ON" else "Page Flip Animation: OFF"
+        cyclePageFlipStyle()
+    }
+
+    fun setPageFlipStyle(style: PageFlipStyle) {
+        _pageFlipStyle.value = style
+        val enabled = style != PageFlipStyle.NONE
+        _isPageFlipEnabled.value = enabled
+        readerPrefs.edit()
+            .putString("pref_page_flip_style", style.name)
+            .putBoolean("pref_page_flip_enabled", enabled)
+            .apply()
+        _statusMessage.value = "Animation: ${style.displayName}"
+    }
+
+    fun cyclePageFlipStyle() {
+        val styles = PageFlipStyle.values()
+        val currentIndex = styles.indexOf(_pageFlipStyle.value)
+        val nextStyle = styles[(currentIndex + 1) % styles.size]
+        setPageFlipStyle(nextStyle)
     }
 
     fun setPageFlipEnabled(enabled: Boolean) {
-        _isPageFlipEnabled.value = enabled
-        readerPrefs.edit().putBoolean("pref_page_flip_enabled", enabled).apply()
+        if (!enabled) {
+            setPageFlipStyle(PageFlipStyle.NONE)
+        } else if (_pageFlipStyle.value == PageFlipStyle.NONE) {
+            setPageFlipStyle(PageFlipStyle.BOOK_3D)
+        } else {
+            _isPageFlipEnabled.value = true
+            readerPrefs.edit().putBoolean("pref_page_flip_enabled", true).apply()
+        }
     }
 
     fun setVoiceReadingVolume(volume: Float) {
